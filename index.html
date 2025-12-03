@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Simulazione — Fake News</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="scientific-model.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/logo.png" alt="Logo" class="logo-img" />
+      <span class="tag">Simulazione — <span id="currentMode">Strategica</span></span>
+    </div>
+    <div class="kpi">
+      <span>Fake: <strong id="kFake">—</strong></span>
+      <span>Verità: <strong id="kTruth">—</strong></span>
+      <span>Neutrali: <strong id="kNeutral">—</strong></span>
+      <span>Giorno: <strong id="dayLabel">0</strong>/<strong id="daysTotal">7</strong></span>
+    </div>
+    <div class="actions">
+      <button id="btnAchievements" class="achievements-btn">🏆 Trofei</button>
+      <button id="btnNext"   class="ghost">Prossimo giorno</button>
+      <button id="btnRunAll" class="ghost">Simula tutto</button>
+      <button id="btnReset"  class="ghost danger">Reset</button>
+      <button id="btnExportPng"  class="ghost">Export PNG</button>
+      <button id="btnExportJson" class="ghost">Export JSON</button>
+      <button id="btnSave" class="ghost">Salva</button>
+      <button id="btnLoad" class="ghost">Carica</button>
+    </div>
+  </header>
+
+  <main class="layout layout-left">
+    <!-- pannello -->
+    <aside class="sidepanel" aria-label="Parametri">
+      <!-- Game Base Panel -->
+      <div id="gameBasePanel" class="game-mode-box" aria-hidden="false">
+        <h2>Game Base</h2>
+        
+        <!-- Messaggio iniziale -->
+        <div id="gb-select-mode" class="section">
+          <p style="text-align: center; color: #9aa6bf; padding: 20px 0;">
+            Si prega di selezionare una modalità per iniziare.
+          </p>
+        </div>
+        
+        <div id="gb-content" style="display: none;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+            <div class="row" style="margin-bottom: 0;">
+              <div>💰 Monete</div>
+              <div><strong id="coinsValue" style="color: #fbbf24; font-size: 1.3em;">500</strong></div>
+            </div>
+            <div class="row" style="margin-bottom: 0;">
+              <div>🎯 Mosse</div>
+              <div><strong id="movesLeft" style="color: #60a5fa; font-size: 1.3em;">0</strong></div>
+            </div>
+          </div>
+
+          <!-- 📊 Bottoni Dettagli e Andamenti -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+            <button id="btnOpenDetails" class="ghost" style="font-size: 0.9em;">📋 Dettaglio</button>
+            <button id="btnOpenResults" class="ghost" style="font-size: 0.9em;">📈 Andamento</button>
+          </div>
+
+          <hr id="hr-strategies" style="display: none;">
+
+          <div id="gb-strategies" class="section" style="display: none;">
+            <h4>Strategie (clicca per investire)</h4>
+            <div class="strategies">
+              <button id="btnHubs" class="ghost strategy">Hubs (500)</button>
+              <button id="btnFrontiere" class="ghost strategy">Frontiere (350)</button>
+              <button id="btnRandom" class="ghost strategy">Random (175)</button>
+            </div>
+            <button id="btnAddEternal" class="ghost" style="width: 100%; margin-top: 6px;">Aggiungi Eternal FC (40)</button>
+          </div>
+
+          <!-- 🎯 BOOSTS - STRATEGICA -->
+          <hr id="hr-boosts" style="display: none;">
+
+          <div id="gb-boosts" class="section" style="display: none;">
+            <h4>⚡ Power-ups disponibili</h4>
+            <div class="boosts-grid">
+              <button id="boostTruthAmp" class="boost-btn" data-cost="80" title="Amplifica credibilità fatto-checking">
+                <div class="boost-icon">�</div>
+                <div class="boost-name">Truth Amp</div>
+                <div class="boost-cost">80 💰</div>
+              </button>
+              <button id="boostFakeVirus" class="boost-btn" data-cost="100" title="Accelera spread fake news">
+                <div class="boost-icon">🦠</div>
+                <div class="boost-name">Fake Virus</div>
+                <div class="boost-cost">100 💰</div>
+              </button>
+              <button id="boostMassDebunk" class="boost-btn" data-cost="120" title="Debunking istantaneo">
+                <div class="boost-icon">💣</div>
+                <div class="boost-name">Mass Debunk</div>
+                <div class="boost-cost">120 💰</div>
+              </button>
+              <button id="boostMemoryWipe" class="boost-btn" data-cost="90" title="Reset memoria utenti">
+                <div class="boost-icon">🧠</div>
+                <div class="boost-name">Memory Wipe</div>
+                <div class="boost-cost">90 💰</div>
+              </button>
+              <button id="boostSegregation" class="boost-btn" data-cost="110" title="Isola la rete">
+                <div class="boost-icon">�</div>
+                <div class="boost-name">Quarantine</div>
+                <div class="boost-cost">110 💰</div>
+              </button>
+            </div>
+            <div id="boosts-active" style="margin-top: 10px; font-size: 0.85em; color: #22c55e; background: rgba(34,197,94,0.1); padding: 8px; border-radius: 6px; border-left: 3px solid #22c55e;">
+              <strong>⚡ Attivi:</strong> <span id="boosts-active-list">—</span>
+            </div>
+          </div>
+
+          <!-- 🎯 TARGETED CAMPAIGNS - STRATEGICA -->
+          <hr id="hr-targeted" style="display: none;">
+
+          <div id="gb-targeted" class="section" style="display: none;">
+            <h4>🎯 Campagne mirate</h4>
+            <p style="font-size: 0.85em; color: #9aa6bf; margin-bottom: 10px;">Scegli su quale comunità concentrare gli sforzi</p>
+            <div class="campaign-buttons">
+              <button id="campGullible" class="campaign-btn" data-target="gullible" data-mult="1.5" data-cost="60">
+                <strong>Creduli</strong><br><small>+50% effetto su comunità credulone (60 💰)</small>
+              </button>
+              <button id="campSkeptic" class="campaign-btn" data-target="skeptic" data-mult="1.5" data-cost="60">
+                <strong>Scettici</strong><br><small>+50% effetto su comunità scettica (60 💰)</small>
+              </button>
+              <button id="campFrontier" class="campaign-btn" data-target="frontier" data-mult="1.3" data-cost="70">
+                <strong>Frontiera</strong><br><small>+30% effetto su nodi di confine (70 💰)</small>
+              </button>
+            </div>
+            <div id="campaign-active" style="margin-top: 8px; font-size: 0.85em; color: #3b82f6;">
+              Campagna attiva: <strong id="campaign-active-name">—</strong>
+            </div>
+          </div>
+
+          <!-- 📊 PREDICTIVE ANALYTICS - STRATEGICA -->
+          <hr id="hr-predictive" style="display: none;">
+
+          <div id="gb-predictive" class="section" style="display: none;">
+            <h4>📊 Previsioni 3 giorni</h4>
+            <button id="btnPredictNext3" class="ghost" style="width: 100%; margin-bottom: 8px;">Calcola previsioni</button>
+            <canvas id="predictiveChart" style="display: none; max-height: 120px;"></canvas>
+            <div id="predictive-text" style="font-size: 0.85em; color: #9aa6bf;">
+              Clicca "Calcola previsioni" per visualizzare il trend
+            </div>
+          </div>
+
+          <hr id="hr-competitive" style="display: none;">
+
+          <div id="gb-competitive" class="section" style="display: none;">
+            <h4>⚔️ Battaglia in tempo reale</h4>
+            <label>Tipo partita
+              <select id="matchType">
+                <option value="cpu">1 vs CPU</option>
+                <option value="1v1">1 vs 1</option>
+              </select>
+            </label>
+            <label>Difficoltà
+              <select id="difficulty">
+                <option value="beginner">Principiante</option>
+                <option value="expert">Esperto</option>
+                <option value="extreme">Estremo</option>
+              </select>
+            </label>
+
+            <!-- CPU/Player Stats -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; font-size: 0.85em; background: rgba(59, 130, 246, 0.1); padding: 8px; border-radius: 4px;">
+              <div>
+                <strong style="color: #3b82f6;">👤 Tu</strong><br>
+                Fake: <span id="playerFakeComp">—</span>%<br>
+                Verità: <span id="playerTruthComp">—</span>%
+              </div>
+              <div>
+                <strong style="color: #f97316;">🤖 CPU</strong><br>
+                Fake: <span id="cpuFakeComp">—</span>%<br>
+                Verità: <span id="cpuTruthComp">—</span>%
+              </div>
+            </div>
+
+            <!-- Broadcast Wars Actions -->
+            <div id="broadcast-wars" style="display: none; margin: 8px 0;">
+              <h5 style="margin: 8px 0;">📡 Broadcast Wars (1/giorno)</h5>
+              <div class="battle-buttons">
+                <button id="battleSabotage" class="battle-btn" data-cost="50">
+                  <strong>💣 Sabota</strong><br><small>Blocca 1 mossa dell'avversario (50 💰)</small>
+                </button>
+                <button id="battleSteal" class="battle-btn" data-cost="75">
+                  <strong>💰 Ruba</strong><br><small>Sottrai 30 💰 all'avversario (75 💰)</small>
+                </button>
+                <button id="battleReverse" class="battle-btn" data-cost="100">
+                  <strong>↩️ Inverto</strong><br><small>Inverti trend per 1 giorno (100 💰)</small>
+                </button>
+              </div>
+              <div id="battle-status" style="margin-top: 6px; font-size: 0.85em; color: #f59e0b;">
+                Status: <strong id="battle-status-text">Pronto</strong>
+              </div>
+            </div>
+
+            <div id="comp-moves-info" style="margin-top: 8px; font-size: 0.85em;">Riepilogo mosse: <span id="compMoves">—</span></div>
+          </div>
+
+          <hr id="hr-free" style="display: none;">
+
+          <div id="gb-free" class="section" style="display: none;">
+            <h4>Libera (parametri scientifici)</h4>
+            <p style="font-size: 0.85em; color: #9aa6bf; margin-bottom: 10px;">Basato su Tambuscio & Ruffo (2019)</p>
+            
+            <label>α Credibilità leggenda <input id="paramAlpha" type="number" min="0" max="0.95" step="0.05" value="0.7"></label>
+            <label>β Spreading rate <input id="paramBeta" type="number" min="0" max="1" step="0.05" value="0.5"></label>
+            <label>pf Forgetting prob. <input id="paramPf" type="number" min="0" max="1" step="0.05" value="0.1"></label>
+            <label>pv Verification prob. <input id="paramPv" type="number" min="0" max="1" step="0.05" value="0.3"></label>
+            
+            <hr style="margin: 10px 0;">
+            
+            <label>ρ Segregazione rete <input id="paramRho" type="number" min="0.5" max="1" step="0.05" value="0.6"></label>
+            <label>γ Fraz. gullible <input id="paramGamma" type="number" min="0" max="1" step="0.05" value="0.5"></label>
+            <label>α_gullible <input id="paramAlphaGullible" type="number" min="0" max="0.95" step="0.05" value="0.8"></label>
+            <label>α_skeptic <input id="paramAlphaSkeptic" type="number" min="0" max="0.95" step="0.05" value="0.3"></label>
+            
+            <div style="margin-top: 10px; padding: 8px; background: rgba(34, 197, 94, 0.1); border-left: 3px solid #22c55e; border-radius: 3px;">
+              <small><strong>Metriche segregazione:</strong></small>
+              <div style="font-size: 0.85em; margin-top: 4px;">
+                <div>Inter-group edges: <span id="metricsInterGroup">—</span></div>
+                <div>Segregation ratio: <span id="metricsSegratio">—</span></div>
+              </div>
+            </div>
+            
+            <div id="thresholdStatus" style="display: none;"></div>
+          </div>
+        </div>
+
+        <hr id="hr-modal">
+
+        <!-- Bottone Modalità in basso -->
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 16px;">
+          <button id="btnMode" class="primary" style="width: 100%; font-weight: bold;">🎮 Seleziona Modalità</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- grafo a destra occupa tutto lo spazio rimanente -->
+    <section class="graphwrap">
+      <!-- svg grafo -->
+      <svg id="graph" role="img" aria-label="Grafo D3-force"></svg>
+
+      <div class="legend">
+        <div style="font-size: 12px; font-weight: 700; color: #5ea8ff; margin-bottom: 4px;">📊 LEGENDA</div>
+        <div class="legend-item">
+          <span class="dot fake"></span>
+          <span style="color: #f0f4f8;">🔴 Believer (Fake)</span>
+        </div>
+        <div class="legend-item">
+          <span class="dot truth"></span>
+          <span style="color: #f0f4f8;">🟢 Fact-Checker (Verità)</span>
+        </div>
+        <div class="legend-item">
+          <span class="dot neutral"></span>
+          <span style="color: #f0f4f8;">⚪ Susceptible (Neutrale)</span>
+        </div>
+        <div class="legend-item">
+          <span class="ring fc"></span>
+          <span style="color: #5ea8ff;">✓ Eternal Fact-Checker</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 🔵 Modale selezione modalità -->
+  <div id="modeModal" class="modal" aria-hidden="true">
+    <div class="modal-card compact">
+      <h3>Seleziona modalità</h3>
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
+        <button class="ghost" id="modeOptStrategica" data-mode="Strategica">Strategica</button>
+        <button class="ghost" id="modeOptCompetitiva" data-mode="Competitiva">Competitiva</button>
+        <button class="ghost" id="modeOptLibera" data-mode="Libera">Libera</button>
+      </div>
+      <div class="modal-actions">
+        <button id="modeApply" class="primary">Applica</button>
+        <button id="modeClose" class="ghost">Annulla</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modali esistenti -->
+  <div id="nodeModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="nodeTitle">
+    <div class="modal-card compact">
+      <h3 id="nodeTitle">Nodo</h3>
+      <div id="nodeBody"></div>
+      <div class="modal-actions">
+        <button id="nodeCancel" class="ghost">Annulla</button>
+        <button id="nodeApply" class="primary">Applica</button>
+      </div>
+      <button id="nodeClose" class="modal-close" aria-label="Chiudi">×</button>
+    </div>
+  </div>
+
+  <div id="resultsModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="resTitle">
+    <div class="modal-card large">
+      <h3 id="resTitle">Andamento percentuali</h3>
+      <canvas id="summaryChart" width="1100" height="460"></canvas>
+      <div class="modal-actions">
+        <button id="resultsClose" class="primary">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="detailsModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="detTitle">
+    <div class="modal-card large">
+      <h3 id="detTitle">Dettaglio giornaliero</h3>
+      <table class="data" id="dailyTable">
+        <thead><tr><th>Giorno</th><th>Fake</th><th>Verità</th><th>Neutrali</th><th>Evento</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="modal-actions">
+        <button id="detailsClose" class="primary">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loadModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="loadTitle">
+    <div class="modal-card compact">
+      <h3 id="loadTitle">Carica sessione</h3>
+      <div id="loadBody"></div>
+      <div class="modal-actions">
+        <button id="loadClose" class="primary">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale selezione team (Competitiva) -->
+  <div id="teamModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="teamTitle">
+    <div class="modal-card compact">
+      <h3 id="teamTitle">Seleziona il tuo team</h3>
+      <p style="text-align: center; margin: 16px 0; color: #9aa6bf;">Quale team vuoi rappresentare?</p>
+      <div style="display: flex; gap: 12px; margin-top: 16px;">
+        <button id="teamFake" class="ghost" style="flex: 1; background: rgba(239, 68, 68, 0.1); border-color: #ef4444;">🔴 Fake</button>
+        <button id="teamTruth" class="ghost" style="flex: 1; background: rgba(34, 197, 94, 0.1); border-color: #22c55e;">🟢 Verità</button>
+      </div>
+      <div class="modal-actions" style="margin-top: 16px;">
+        <button id="teamCancel" class="ghost">Annulla</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale risultati finali -->
+  <div id="winnerModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="winnerTitle">
+    <div class="modal-card compact">
+      <h3 id="winnerTitle" style="text-align: center; font-size: 1.8em; margin: 20px 0;">Ha vinto il team <span id="winnerTeam">—</span></h3>
+      <div style="text-align: center; margin: 20px 0; font-size: 1.2em;">
+        <p>Fake: <strong id="finalFake">—</strong>%</p>
+        <p>Verità: <strong id="finalTruth">—</strong>%</p>
+      </div>
+      <div class="modal-actions">
+        <button id="winnerClose" class="primary">Nuovo gioco</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite">Sessione salvata</div>
+
+  <!-- Modale Achievements -->
+  <div id="achievementsModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="achievementsTitle">
+    <div class="modal-card large" style="max-width: 1000px;">
+      <button class="modal-close" onclick="closeModal('#achievementsModal')">✕</button>
+      <h3 id="achievementsTitle" style="text-align: center; font-size: 1.6em; margin-bottom: 20px;">🏆 Trofei e Obiettivi</h3>
+      <div id="achievementsContent" style="display: grid; gap: 20px; max-height: 70vh; overflow-y: auto;">
+        <!-- Sarà popolato da JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
