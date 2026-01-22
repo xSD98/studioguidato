@@ -1,164 +1,235 @@
 <!doctype html>
+<!--
+================================================================================
+SIMULATORE DI DIFFUSIONE DELLA DISINFORMAZIONE
+Interfaccia Web per il Modello Epidemiologico S-B-F (Susceptible-Believer-FactChecker)
+
+Autori: Simone D'Agnano - Basato sul modello di Tambuscio & Ruffo (2019)
+Descrizione: Applicazione interattiva per la simulazione e visualizzazione
+             della propagazione di fake news in reti sociali complesse.
+             
+Riferimenti bibliografici:
+- Tambuscio, M., & Ruffo, G. (2019). Fact-checking strategies to limit 
+  urban legends spreading in a segregated society.
+  
+Tecnologie utilizzate:
+- D3.js v7: Visualizzazione force-directed del grafo sociale
+- Chart.js v4.4.1: Grafici statistici temporali
+- FastAPI Backend: Motore di simulazione epidemiologica
+================================================================================
+-->
 <html lang="it">
 <head>
+  <!-- Metadati del documento -->
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Simulazione — Fake News</title>
+  <meta name="description" content="Simulatore di diffusione della disinformazione basato sul modello epidemiologico S-B-F"/>
+  <meta name="author" content="Progetto Studio Guidato - Universita degli Studi di Torino"/>
+  
+  
+  <!-- Fogli di stile -->
   <link rel="stylesheet" href="styles.css"/>
+  
+  <!-- Librerie esterne per visualizzazione -->
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="scientific-model.js"></script>
+  
+  <!-- Client HTTP per comunicazione con API backend -->
+  <script src="hoax-client.js"></script>
 </head>
 <body>
+  <!-- ============================================================
+       BARRA DI NAVIGAZIONE SUPERIORE
+       Contiene il branding, gli indicatori KPI in tempo reale
+       e i controlli principali della simulazione.
+       ============================================================ -->
   <header class="topbar">
+    <!-- Identificazione dell'applicazione -->
     <div class="brand">
-      <img src="assets/logo.png" alt="Logo" class="logo-img" />
-      <span class="tag">Simulazione — <span id="currentMode">Strategica</span></span>
+      <img src="assets/logo.png" alt="Logo Simulatore" class="logo-img" />
     </div>
+    
+    <!-- Indicatori Chiave di Performance (KPI) -->
     <div class="kpi">
-      <span>Fake: <strong id="kFake">—</strong></span>
-      <span>Verità: <strong id="kTruth">—</strong></span>
-      <span>Neutrali: <strong id="kNeutral">—</strong></span>
-      <span>Giorno: <strong id="dayLabel">0</strong>/<strong id="daysTotal">7</strong></span>
+      <span>Believer: <strong id="kFake">—</strong></span>
+      <span>Fact-Checker: <strong id="kTruth">—</strong></span>
+      <span>Susceptible: <strong id="kNeutral">—</strong></span>
+      <span>Iterazione: <strong id="dayLabel">0</strong>/<strong id="daysTotal">7</strong></span>
     </div>
+    
+    <!-- Controlli principali della simulazione -->
     <div class="actions">
-      <button id="btnAchievements" class="achievements-btn">🏆 Trofei</button>
-      <button id="btnNext"   class="ghost">Prossimo giorno</button>
-      <button id="btnRunAll" class="ghost">Simula tutto</button>
-      <button id="btnReset"  class="ghost danger">Reset</button>
-      <button id="btnExportPng"  class="ghost">Export PNG</button>
-      <button id="btnExportJson" class="ghost">Export JSON</button>
-      <button id="btnSave" class="ghost">Salva</button>
-      <button id="btnLoad" class="ghost">Carica</button>
+      <button id="btnAchievements" class="achievements-btn" title="Visualizza obiettivi e trofei">🏆 Trofei</button>
+      <button id="btnRefresh" class="ghost" title="Sincronizza lo stato con il server API">🔄 Sincronizza</button>
+      <button id="btnNext" class="ghost" title="Esegui un passo temporale della simulazione">Prossima Iterazione</button>
+      <button id="btnRunAll" class="ghost" title="Esegui tutte le iterazioni rimanenti">Simula Completa</button>
+      <button id="btnReset" class="ghost danger" title="Ripristina lo stato iniziale">Reinizializza</button>
+      <button id="btnExportPng" class="ghost" title="Esporta il grafico in formato PNG">Esporta PNG</button>
+      <button id="btnExportJson" class="ghost" title="Esporta i dati in formato JSON">Esporta JSON</button>
+      <button id="btnSave" class="ghost" title="Salva la sessione corrente">Salva Sessione</button>
+      <button id="btnLoad" class="ghost" title="Carica una sessione precedente">Carica Sessione</button>
     </div>
   </header>
 
+  <!-- ============================================================
+       LAYOUT PRINCIPALE A DUE COLONNE
+       Pannello laterale sinistro: controlli e parametri
+       Area principale destra: visualizzazione del grafo
+       ============================================================ -->
   <main class="layout layout-left">
-    <!-- pannello -->
-    <aside class="sidepanel" aria-label="Parametri">
-      <!-- Game Base Panel -->
+    <!-- ========================================================
+         PANNELLO LATERALE DI CONTROLLO
+         Contiene i parametri di configurazione della simulazione,
+         le strategie di immunizzazione e i controlli di gioco.
+         ======================================================== -->
+    <aside class="sidepanel" aria-label="Pannello di controllo della simulazione">
+      <!-- Contenitore principale delle modalita di gioco -->
       <div id="gameBasePanel" class="game-mode-box" aria-hidden="false">
-        <h2>Game Base</h2>
+        <h2>Pannello di Controllo</h2>
         
-        <!-- Messaggio iniziale -->
+        <!-- Messaggio di benvenuto iniziale -->
         <div id="gb-select-mode" class="section">
           <p style="text-align: center; color: #9aa6bf; padding: 20px 0;">
-            Si prega di selezionare una modalità per iniziare.
+            Selezionare una modalita di simulazione per iniziare l'esperimento.
           </p>
         </div>
         
+        <!-- Contenuto principale del pannello (visibile dopo selezione modalita) -->
         <div id="gb-content" style="display: none;">
+          <!-- Indicatori delle risorse di gioco -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
             <div class="row" style="margin-bottom: 0;">
-              <div>💰 Monete</div>
+              <div>💰 Crediti</div>
               <div><strong id="coinsValue" style="color: #fbbf24; font-size: 1.3em;">500</strong></div>
             </div>
             <div class="row" style="margin-bottom: 0;">
-              <div>🎯 Mosse</div>
+              <div>🎯 Azioni Disponibili</div>
               <div><strong id="movesLeft" style="color: #60a5fa; font-size: 1.3em;">0</strong></div>
             </div>
           </div>
 
-          <!-- 📊 Bottoni Dettagli e Andamenti -->
+          <!-- Pulsanti per visualizzazione dati statistici -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-            <button id="btnOpenDetails" class="ghost" style="font-size: 0.9em;">📋 Dettaglio</button>
-            <button id="btnOpenResults" class="ghost" style="font-size: 0.9em;">📈 Andamento</button>
+            <button id="btnOpenDetails" class="ghost" style="font-size: 0.9em;">📋 Dati Dettagliati</button>
+            <button id="btnOpenResults" class="ghost" style="font-size: 0.9em;">📈 Andamento Temporale</button>
           </div>
 
           <hr id="hr-strategies" style="display: none;">
 
+          <!-- ====================================================
+               STRATEGIE DI IMMUNIZZAZIONE
+               Algoritmi per il posizionamento ottimale dei Fact-Checker
+               basati su criteri topologici della rete sociale.
+               ==================================================== -->
           <div id="gb-strategies" class="section" style="display: none;">
-            <h4>Strategie (clicca per investire)</h4>
+            <h4>Strategie di Immunizzazione</h4>
             <div class="strategies">
-              <button id="btnHubs" class="ghost strategy">Hubs (500)</button>
-              <button id="btnFrontiere" class="ghost strategy">Frontiere (350)</button>
-              <button id="btnRandom" class="ghost strategy">Random (175)</button>
+              <button id="btnHubs" class="ghost strategy" title="Posiziona FC sui nodi con grado massimo">Strategia Hub (500)</button>
+              <button id="btnFrontiere" class="ghost strategy" title="Posiziona FC sui nodi ponte tra comunita">Strategia Frontiera (350)</button>
+              <button id="btnRandom" class="ghost strategy" title="Posizionamento casuale uniforme">Strategia Casuale (175)</button>
             </div>
-            <button id="btnAddEternal" class="ghost" style="width: 100%; margin-top: 6px;">Aggiungi Eternal FC (40)</button>
+            <button id="btnAddEternal" class="ghost" style="width: 100%; margin-top: 6px;" title="Seleziona manualmente un nodo da convertire in FC permanente">Aggiungi Fact-Checker Permanente (40)</button>
           </div>
 
-          <!-- 🎯 BOOSTS - STRATEGICA -->
+          <!-- ====================================================
+               POTENZIAMENTI TEMPORANEI (BOOSTS)
+               Modificatori che alterano i parametri della simulazione
+               per un numero limitato di iterazioni.
+               ==================================================== -->
           <hr id="hr-boosts" style="display: none;">
 
           <div id="gb-boosts" class="section" style="display: none;">
-            <h4>⚡ Power-ups disponibili</h4>
+            <h4>⚡ Potenziamenti Disponibili</h4>
             <div class="boosts-grid">
-              <button id="boostTruthAmp" class="boost-btn" data-cost="80" title="Amplifica credibilità fatto-checking">
-                <div class="boost-icon">�</div>
-                <div class="boost-name">Truth Amp</div>
+              <button id="boostTruthAmp" class="boost-btn" data-cost="80" title="Incrementa temporaneamente il parametro beta (efficacia fact-checking)">
+                <div class="boost-icon">📢</div>
+                <div class="boost-name">Amplificatore Verita</div>
                 <div class="boost-cost">80 💰</div>
               </button>
-              <button id="boostFakeVirus" class="boost-btn" data-cost="100" title="Accelera spread fake news">
+              <button id="boostFakeVirus" class="boost-btn" data-cost="100" title="Incrementa temporaneamente il parametro alpha (contagiosita disinformazione)">
                 <div class="boost-icon">🦠</div>
-                <div class="boost-name">Fake Virus</div>
+                <div class="boost-name">Virus Informativo</div>
                 <div class="boost-cost">100 💰</div>
               </button>
-              <button id="boostMassDebunk" class="boost-btn" data-cost="120" title="Debunking istantaneo">
+              <button id="boostMassDebunk" class="boost-btn" data-cost="120" title="Converte istantaneamente una frazione di Believer in Fact-Checker">
                 <div class="boost-icon">💣</div>
-                <div class="boost-name">Mass Debunk</div>
+                <div class="boost-name">Debunking Massivo</div>
                 <div class="boost-cost">120 💰</div>
               </button>
-              <button id="boostMemoryWipe" class="boost-btn" data-cost="90" title="Reset memoria utenti">
+              <button id="boostMemoryWipe" class="boost-btn" data-cost="90" title="Riporta una frazione di nodi allo stato Susceptible">
                 <div class="boost-icon">🧠</div>
-                <div class="boost-name">Memory Wipe</div>
+                <div class="boost-name">Reset Memoria</div>
                 <div class="boost-cost">90 💰</div>
               </button>
-              <button id="boostSegregation" class="boost-btn" data-cost="110" title="Isola la rete">
-                <div class="boost-icon">�</div>
-                <div class="boost-name">Quarantine</div>
+              <button id="boostSegregation" class="boost-btn" data-cost="110" title="Modifica temporaneamente il parametro rho (segregazione rete)">
+                <div class="boost-icon">🔒</div>
+                <div class="boost-name">Quarantena</div>
                 <div class="boost-cost">110 💰</div>
               </button>
             </div>
             <div id="boosts-active" style="margin-top: 10px; font-size: 0.85em; color: #22c55e; background: rgba(34,197,94,0.1); padding: 8px; border-radius: 6px; border-left: 3px solid #22c55e;">
-              <strong>⚡ Attivi:</strong> <span id="boosts-active-list">—</span>
+              <strong>⚡ Potenziamenti Attivi:</strong> <span id="boosts-active-list">Nessuno</span>
             </div>
           </div>
 
-          <!-- 🎯 TARGETED CAMPAIGNS - STRATEGICA -->
+          <!-- ====================================================
+               CAMPAGNE MIRATE
+               Interventi focalizzati su specifiche comunita della rete
+               con effetti amplificati sui nodi target.
+               ==================================================== -->
           <hr id="hr-targeted" style="display: none;">
 
           <div id="gb-targeted" class="section" style="display: none;">
-            <h4>🎯 Campagne mirate</h4>
-            <p style="font-size: 0.85em; color: #9aa6bf; margin-bottom: 10px;">Scegli su quale comunità concentrare gli sforzi</p>
+            <h4>🎯 Campagne Mirate per Comunita</h4>
+            <p style="font-size: 0.85em; color: #9aa6bf; margin-bottom: 10px;">Selezionare la comunita target per concentrare l'intervento</p>
             <div class="campaign-buttons">
               <button id="campGullible" class="campaign-btn" data-target="gullible" data-mult="1.5" data-cost="60">
-                <strong>Creduli</strong><br><small>+50% effetto su comunità credulone (60 💰)</small>
+                <strong>Comunita Credula</strong><br><small>+50% efficacia su nodi ad alta suscettibilita (60 💰)</small>
               </button>
               <button id="campSkeptic" class="campaign-btn" data-target="skeptic" data-mult="1.5" data-cost="60">
-                <strong>Scettici</strong><br><small>+50% effetto su comunità scettica (60 💰)</small>
+                <strong>Comunita Scettica</strong><br><small>+50% efficacia su nodi a bassa suscettibilita (60 💰)</small>
               </button>
               <button id="campFrontier" class="campaign-btn" data-target="frontier" data-mult="1.3" data-cost="70">
-                <strong>Frontiera</strong><br><small>+30% effetto su nodi di confine (70 💰)</small>
+                <strong>Nodi di Frontiera</strong><br><small>+30% efficacia su nodi ponte tra comunita (70 💰)</small>
               </button>
             </div>
             <div id="campaign-active" style="margin-top: 8px; font-size: 0.85em; color: #3b82f6;">
-              Campagna attiva: <strong id="campaign-active-name">—</strong>
+              Campagna in corso: <strong id="campaign-active-name">Nessuna</strong>
             </div>
           </div>
 
-          <!-- 📊 PREDICTIVE ANALYTICS - STRATEGICA -->
+          <!-- ====================================================
+               ANALISI PREDITTIVA
+               Proiezione dell'evoluzione della simulazione
+               basata sui parametri correnti del modello.
+               ==================================================== -->
           <hr id="hr-predictive" style="display: none;">
 
           <div id="gb-predictive" class="section" style="display: none;">
-            <h4>📊 Previsioni 3 giorni</h4>
-            <button id="btnPredictNext3" class="ghost" style="width: 100%; margin-bottom: 8px;">Calcola previsioni</button>
+            <h4>📊 Analisi Predittiva (3 Iterazioni)</h4>
+            <button id="btnPredictNext3" class="ghost" style="width: 100%; margin-bottom: 8px;">Genera Proiezione</button>
             <canvas id="predictiveChart" style="display: none; max-height: 120px;"></canvas>
             <div id="predictive-text" style="font-size: 0.85em; color: #9aa6bf;">
-              Clicca "Calcola previsioni" per visualizzare il trend
+              Nota: Le previsioni richiedono un endpoint API dedicato (attualmente disabilitato)
             </div>
           </div>
 
+          <!-- ====================================================
+               MODALITA COMPETITIVA
+               Confronto in tempo reale contro un avversario AI
+               con sistema di azioni strategiche e contromisure.
+               ==================================================== -->
           <hr id="hr-competitive" style="display: none;">
 
           <div id="gb-competitive" class="section" style="display: none;">
-            <h4>⚔️ Battaglia in tempo reale</h4>
-            <label>Tipo partita
+            <h4>⚔️ Modalita Competitiva</h4>
+            <label>Tipologia di Partita
               <select id="matchType">
-                <option value="cpu">1 vs CPU</option>
-                <option value="1v1">1 vs 1</option>
+                <option value="cpu">Giocatore vs Intelligenza Artificiale</option>
+                <option value="1v1">Giocatore vs Giocatore</option>
               </select>
             </label>
-            <label>Difficoltà
+            <label>Livello di Difficolta
               <select id="difficulty">
                 <option value="beginner">Principiante</option>
                 <option value="expert">Esperto</option>
@@ -166,65 +237,76 @@
               </select>
             </label>
 
-            <!-- CPU/Player Stats -->
+            <!-- Statistiche comparative in tempo reale -->
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; font-size: 0.85em; background: rgba(59, 130, 246, 0.1); padding: 8px; border-radius: 4px;">
               <div>
-                <strong style="color: #3b82f6;">👤 Tu</strong><br>
-                Fake: <span id="playerFakeComp">—</span>%<br>
-                Verità: <span id="playerTruthComp">—</span>%
+                <strong style="color: #3b82f6;">👤 Giocatore</strong><br>
+                Believer: <span id="playerFakeComp">—</span>%<br>
+                Fact-Checker: <span id="playerTruthComp">—</span>%
               </div>
               <div>
-                <strong style="color: #f97316;">🤖 CPU</strong><br>
-                Fake: <span id="cpuFakeComp">—</span>%<br>
-                Verità: <span id="cpuTruthComp">—</span>%
+                <strong style="color: #f97316;">🤖 Avversario AI</strong><br>
+                Believer: <span id="cpuFakeComp">—</span>%<br>
+                Fact-Checker: <span id="cpuTruthComp">—</span>%
               </div>
             </div>
 
-            <!-- Broadcast Wars Actions -->
+            <!-- Azioni strategiche competitive -->
             <div id="broadcast-wars" style="display: none; margin: 8px 0;">
-              <h5 style="margin: 8px 0;">📡 Broadcast Wars (1/giorno)</h5>
+              <h5 style="margin: 8px 0;">📡 Azioni Competitive (1 per iterazione)</h5>
               <div class="battle-buttons">
                 <button id="battleSabotage" class="battle-btn" data-cost="50">
-                  <strong>💣 Sabota</strong><br><small>Blocca 1 mossa dell'avversario (50 💰)</small>
+                  <strong>💣 Sabotaggio</strong><br><small>Blocca 1 azione dell'avversario (50 💰)</small>
                 </button>
                 <button id="battleSteal" class="battle-btn" data-cost="75">
-                  <strong>💰 Ruba</strong><br><small>Sottrai 30 💰 all'avversario (75 💰)</small>
+                  <strong>💰 Sottrazione</strong><br><small>Sottrai 30 crediti all'avversario (75 💰)</small>
                 </button>
                 <button id="battleReverse" class="battle-btn" data-cost="100">
-                  <strong>↩️ Inverto</strong><br><small>Inverti trend per 1 giorno (100 💰)</small>
+                  <strong>↩️ Inversione</strong><br><small>Inverti il trend per 1 iterazione (100 💰)</small>
                 </button>
               </div>
               <div id="battle-status" style="margin-top: 6px; font-size: 0.85em; color: #f59e0b;">
-                Status: <strong id="battle-status-text">Pronto</strong>
+                Stato: <strong id="battle-status-text">Pronto</strong>
               </div>
             </div>
 
-            <div id="comp-moves-info" style="margin-top: 8px; font-size: 0.85em;">Riepilogo mosse: <span id="compMoves">—</span></div>
+            <div id="comp-moves-info" style="margin-top: 8px; font-size: 0.85em;">Riepilogo azioni: <span id="compMoves">—</span></div>
           </div>
 
+          <!-- ====================================================
+               MODALITA LIBERA - PARAMETRI SCIENTIFICI
+               Accesso diretto ai parametri del modello epidemiologico
+               S-B-F secondo la formulazione di Tambuscio & Ruffo (2019).
+               
+               NOTA: I valori visualizzati sono di riferimento.
+               I parametri effettivi sono gestiti dal backend API.
+               ==================================================== -->
           <hr id="hr-free" style="display: none;">
 
           <div id="gb-free" class="section" style="display: none;">
-            <h4>Libera (parametri scientifici)</h4>
-            <p style="font-size: 0.85em; color: #9aa6bf; margin-bottom: 10px;">Basato su Tambuscio & Ruffo (2019)</p>
+            <h4>Modalita Libera - Parametri Scientifici</h4>
+            <p style="font-size: 0.85em; color: #9aa6bf; margin-bottom: 10px;">Modello S-B-F (Tambuscio & Ruffo, 2019)</p>
             
-            <label>α Credibilità leggenda <input id="paramAlpha" type="number" min="0" max="0.95" step="0.05" value="0.7"></label>
-            <label>β Spreading rate <input id="paramBeta" type="number" min="0" max="1" step="0.05" value="0.5"></label>
-            <label>pf Forgetting prob. <input id="paramPf" type="number" min="0" max="1" step="0.05" value="0.1"></label>
-            <label>pv Verification prob. <input id="paramPv" type="number" min="0" max="1" step="0.05" value="0.3"></label>
+            <!-- Parametri principali del modello epidemiologico -->
+            <label>α (alpha) - Credibilita della leggenda <input id="paramAlpha" type="number" min="0" max="0.95" step="0.05" value="0.7" title="Probabilita di credere alla fake news"></label>
+            <label>β (beta) - Tasso di diffusione <input id="paramBeta" type="number" min="0" max="1" step="0.05" value="0.5" title="Tasso di propagazione dell'informazione"></label>
+            <label>p_f - Probabilita di dimenticanza <input id="paramPf" type="number" min="0" max="1" step="0.05" value="0.1" title="Probabilita che un FC dimentichi e torni S"></label>
+            <label>p_v - Probabilita di verifica <input id="paramPv" type="number" min="0" max="1" step="0.05" value="0.3" title="Probabilita di verificare l'informazione"></label>
             
             <hr style="margin: 10px 0;">
             
-            <label>ρ Segregazione rete <input id="paramRho" type="number" min="0.5" max="1" step="0.05" value="0.6"></label>
-            <label>γ Fraz. gullible <input id="paramGamma" type="number" min="0" max="1" step="0.05" value="0.5"></label>
-            <label>α_gullible <input id="paramAlphaGullible" type="number" min="0" max="0.95" step="0.05" value="0.8"></label>
-            <label>α_skeptic <input id="paramAlphaSkeptic" type="number" min="0" max="0.95" step="0.05" value="0.3"></label>
+            <!-- Parametri di segregazione della rete -->
+            <label>ρ (rho) - Coefficiente di segregazione <input id="paramRho" type="number" min="0.5" max="1" step="0.05" value="0.6" title="Grado di separazione tra comunita"></label>
+            <label>γ (gamma) - Frazione comunita credula <input id="paramGamma" type="number" min="0" max="1" step="0.05" value="0.5" title="Proporzione di nodi ad alta suscettibilita"></label>
+            <label>α_gullible - Alpha comunita credula <input id="paramAlphaGullible" type="number" min="0" max="0.95" step="0.05" value="0.8" title="Alpha per la comunita ad alta suscettibilita"></label>
+            <label>α_skeptic - Alpha comunita scettica <input id="paramAlphaSkeptic" type="number" min="0" max="0.95" step="0.05" value="0.3" title="Alpha per la comunita a bassa suscettibilita"></label>
             
+            <!-- Metriche di segregazione calcolate -->
             <div style="margin-top: 10px; padding: 8px; background: rgba(34, 197, 94, 0.1); border-left: 3px solid #22c55e; border-radius: 3px;">
-              <small><strong>Metriche segregazione:</strong></small>
+              <small><strong>Metriche di Segregazione della Rete:</strong></small>
               <div style="font-size: 0.85em; margin-top: 4px;">
-                <div>Inter-group edges: <span id="metricsInterGroup">—</span></div>
-                <div>Segregation ratio: <span id="metricsSegratio">—</span></div>
+                <div>Archi inter-gruppo: <span id="metricsInterGroup">—</span></div>
+                <div>Rapporto di segregazione: <span id="metricsSegratio">—</span></div>
               </div>
             </div>
             
@@ -234,72 +316,84 @@
 
         <hr id="hr-modal">
 
-        <!-- Bottone Modalità in basso -->
+        <!-- Pulsante di selezione della modalita di simulazione -->
         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 16px;">
-          <button id="btnMode" class="primary" style="width: 100%; font-weight: bold;">🎮 Seleziona Modalità</button>
+          <button id="btnMode" class="primary" style="width: 100%; font-weight: bold;">🎮 Seleziona Modalita di Simulazione</button>
         </div>
       </div>
     </aside>
 
-    <!-- grafo a destra occupa tutto lo spazio rimanente -->
+    <!-- ========================================================
+         AREA DI VISUALIZZAZIONE DEL GRAFO
+         Canvas SVG per il rendering force-directed della rete sociale
+         con legenda degli stati epidemiologici.
+         ======================================================== -->
     <section class="graphwrap">
-      <!-- svg grafo -->
-      <svg id="graph" role="img" aria-label="Grafo D3-force"></svg>
+      <!-- Canvas SVG per la visualizzazione D3.js -->
+      <svg id="graph" role="img" aria-label="Visualizzazione force-directed della rete sociale"></svg>
 
+      <!-- Legenda degli stati epidemiologici -->
       <div class="legend">
-        <div style="font-size: 12px; font-weight: 700; color: #5ea8ff; margin-bottom: 4px;">📊 LEGENDA</div>
+        <div style="font-size: 12px; font-weight: 700; color: #5ea8ff; margin-bottom: 4px;">📊 LEGENDA STATI</div>
         <div class="legend-item">
           <span class="dot fake"></span>
-          <span style="color: #f0f4f8;">🔴 Believer (Fake)</span>
+          <span style="color: #f0f4f8;">🔴 Believer - Diffusore di disinformazione</span>
         </div>
         <div class="legend-item">
           <span class="dot truth"></span>
-          <span style="color: #f0f4f8;">🟢 Fact-Checker (Verità)</span>
+          <span style="color: #f0f4f8;">🟢 Fact-Checker - Verificatore attivo</span>
         </div>
         <div class="legend-item">
           <span class="dot neutral"></span>
-          <span style="color: #f0f4f8;">⚪ Susceptible (Neutrale)</span>
+          <span style="color: #f0f4f8;">⚪ Susceptible - Suscettibile all'informazione</span>
         </div>
         <div class="legend-item">
           <span class="ring fc"></span>
-          <span style="color: #5ea8ff;">✓ Eternal Fact-Checker</span>
+          <span style="color: #5ea8ff;">✓ Fact-Checker Permanente (immunita acquisita)</span>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- 🔵 Modale selezione modalità -->
+  <!-- ============================================================
+       FINESTRE MODALI
+       Dialoghi per la configurazione, visualizzazione dati e
+       interazione con gli elementi della simulazione.
+       ============================================================ -->
+
+  <!-- Modale per la selezione della modalita di simulazione -->
   <div id="modeModal" class="modal" aria-hidden="true">
     <div class="modal-card compact">
-      <h3>Seleziona modalità</h3>
+      <h3>Selezione Modalita di Simulazione</h3>
       <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
-        <button class="ghost" id="modeOptStrategica" data-mode="Strategica">Strategica</button>
-        <button class="ghost" id="modeOptCompetitiva" data-mode="Competitiva">Competitiva</button>
-        <button class="ghost" id="modeOptLibera" data-mode="Libera">Libera</button>
+        <button class="ghost" id="modeOptStrategica" data-mode="Strategica">Strategica - Risorse limitate e obiettivi</button>
+        <button class="ghost" id="modeOptCompetitiva" data-mode="Competitiva">Competitiva - Confronto con AI</button>
+        <button class="ghost" id="modeOptLibera" data-mode="Libera">Libera - Accesso ai parametri scientifici</button>
       </div>
       <div class="modal-actions">
-        <button id="modeApply" class="primary">Applica</button>
+        <button id="modeApply" class="primary">Applica Selezione</button>
         <button id="modeClose" class="ghost">Annulla</button>
       </div>
     </div>
   </div>
 
-  <!-- Modali esistenti -->
+  <!-- Modale per l'ispezione e modifica di un singolo nodo -->
   <div id="nodeModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="nodeTitle">
     <div class="modal-card compact">
-      <h3 id="nodeTitle">Nodo</h3>
+      <h3 id="nodeTitle">Dettaglio Nodo</h3>
       <div id="nodeBody"></div>
       <div class="modal-actions">
         <button id="nodeCancel" class="ghost">Annulla</button>
-        <button id="nodeApply" class="primary">Applica</button>
+        <button id="nodeApply" class="primary">Applica Modifiche</button>
       </div>
-      <button id="nodeClose" class="modal-close" aria-label="Chiudi">×</button>
+      <button id="nodeClose" class="modal-close" aria-label="Chiudi finestra">×</button>
     </div>
   </div>
 
+  <!-- Modale per la visualizzazione del grafico temporale -->
   <div id="resultsModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="resTitle">
     <div class="modal-card large">
-      <h3 id="resTitle">Andamento percentuali</h3>
+      <h3 id="resTitle">Andamento Temporale delle Percentuali</h3>
       <canvas id="summaryChart" width="1100" height="460"></canvas>
       <div class="modal-actions">
         <button id="resultsClose" class="primary">Chiudi</button>
@@ -307,11 +401,12 @@
     </div>
   </div>
 
+  <!-- Modale per la tabella dei dati giornalieri -->
   <div id="detailsModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="detTitle">
     <div class="modal-card large">
-      <h3 id="detTitle">Dettaglio giornaliero</h3>
+      <h3 id="detTitle">Tabella Dati per Iterazione</h3>
       <table class="data" id="dailyTable">
-        <thead><tr><th>Giorno</th><th>Fake</th><th>Verità</th><th>Neutrali</th><th>Evento</th></tr></thead>
+        <thead><tr><th>Iterazione</th><th>Believer</th><th>Fact-Checker</th><th>Susceptible</th><th>Evento</th></tr></thead>
         <tbody></tbody>
       </table>
       <div class="modal-actions">
@@ -320,9 +415,10 @@
     </div>
   </div>
 
+  <!-- Modale per il caricamento di sessioni salvate -->
   <div id="loadModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="loadTitle">
     <div class="modal-card compact">
-      <h3 id="loadTitle">Carica sessione</h3>
+      <h3 id="loadTitle">Carica Sessione Salvata</h3>
       <div id="loadBody"></div>
       <div class="modal-actions">
         <button id="loadClose" class="primary">Chiudi</button>
@@ -330,14 +426,14 @@
     </div>
   </div>
 
-  <!-- Modale selezione team (Competitiva) -->
+  <!-- Modale per la selezione del team (modalita competitiva) -->
   <div id="teamModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="teamTitle">
     <div class="modal-card compact">
-      <h3 id="teamTitle">Seleziona il tuo team</h3>
-      <p style="text-align: center; margin: 16px 0; color: #9aa6bf;">Quale team vuoi rappresentare?</p>
+      <h3 id="teamTitle">Selezione del Team</h3>
+      <p style="text-align: center; margin: 16px 0; color: #9aa6bf;">Selezionare la fazione da rappresentare nella competizione</p>
       <div style="display: flex; gap: 12px; margin-top: 16px;">
-        <button id="teamFake" class="ghost" style="flex: 1; background: rgba(239, 68, 68, 0.1); border-color: #ef4444;">🔴 Fake</button>
-        <button id="teamTruth" class="ghost" style="flex: 1; background: rgba(34, 197, 94, 0.1); border-color: #22c55e;">🟢 Verità</button>
+        <button id="teamFake" class="ghost" style="flex: 1; background: rgba(239, 68, 68, 0.1); border-color: #ef4444;">🔴 Team Disinformazione</button>
+        <button id="teamTruth" class="ghost" style="flex: 1; background: rgba(34, 197, 94, 0.1); border-color: #22c55e;">🟢 Team Fact-Checking</button>
       </div>
       <div class="modal-actions" style="margin-top: 16px;">
         <button id="teamCancel" class="ghost">Annulla</button>
@@ -345,34 +441,35 @@
     </div>
   </div>
 
-  <!-- Modale risultati finali -->
+  <!-- Modale per la visualizzazione dei risultati finali -->
   <div id="winnerModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="winnerTitle">
     <div class="modal-card compact">
-      <h3 id="winnerTitle" style="text-align: center; font-size: 1.8em; margin: 20px 0;">Ha vinto il team <span id="winnerTeam">—</span></h3>
+      <h3 id="winnerTitle" style="text-align: center; font-size: 1.8em; margin: 20px 0;">Risultato Finale: <span id="winnerTeam">—</span></h3>
       <div style="text-align: center; margin: 20px 0; font-size: 1.2em;">
-        <p>Fake: <strong id="finalFake">—</strong>%</p>
-        <p>Verità: <strong id="finalTruth">—</strong>%</p>
+        <p>Believer: <strong id="finalFake">—</strong>%</p>
+        <p>Fact-Checker: <strong id="finalTruth">—</strong>%</p>
       </div>
       <div class="modal-actions">
-        <button id="winnerClose" class="primary">Nuovo gioco</button>
+        <button id="winnerClose" class="primary">Nuova Simulazione</button>
       </div>
     </div>
   </div>
 
-  <!-- Toast -->
-  <div id="toast" class="toast" role="status" aria-live="polite">Sessione salvata</div>
+  <!-- Notifica toast per feedback non intrusivo -->
+  <div id="toast" class="toast" role="status" aria-live="polite">Operazione completata</div>
 
-  <!-- Modale Achievements -->
+  <!-- Modale per la visualizzazione degli achievement/trofei -->
   <div id="achievementsModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="achievementsTitle">
     <div class="modal-card large" style="max-width: 1000px;">
       <button class="modal-close" onclick="closeModal('#achievementsModal')">✕</button>
-      <h3 id="achievementsTitle" style="text-align: center; font-size: 1.6em; margin-bottom: 20px;">🏆 Trofei e Obiettivi</h3>
+      <h3 id="achievementsTitle" style="text-align: center; font-size: 1.6em; margin-bottom: 20px;">🏆 Obiettivi e Trofei</h3>
       <div id="achievementsContent" style="display: grid; gap: 20px; max-height: 70vh; overflow-y: auto;">
-        <!-- Sarà popolato da JavaScript -->
+        <!-- Contenuto generato dinamicamente da JavaScript -->
       </div>
     </div>
   </div>
 
+  <!-- Script principale dell'applicazione -->
   <script src="app.js"></script>
 </body>
 </html>

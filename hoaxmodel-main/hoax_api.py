@@ -1,0 +1,445 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Union
+import networkx as nx
+from functools import partial
+# Assumendo che questi moduli esistano e contengano le classi/funzioni menzionate
+from simulation import Simulation
+from hoax_config import HoaxConfig
+from hoax_utils import create_graph
+from hoax_model_functions import hoax_initial_state, hoax_state_transition, stop_condition
+
+
+# --- 1. Strutture Dati (Pydantic Models) ---
+
+# Modello per i parametri di creazione del grafo
+class GraphParams(BaseModel):
+    """
+    Parametri per la creazione del grafo e la configurazione della dinamica del modello SBF (Susceptible-Believer-FactChecker).
+    """
+    n_nodes: int = Field(..., gt=0, description="Numero totale di nodi nel grafo.")
+    avg_degree: int = Field(..., gt=0, description="Grado medio desiderato del grafo.")
+    # MODIFICA: alpha può essere float o Dict[str, float]
+    alpha: Union[float, Dict[str, float]] = Field(
+        ..., 
+        description=(
+            "Probabilità di credibilità (S -> B). "
+            "Può essere un singolo float (uniforme) o un dizionario che associa "
+            "un'etichetta di gruppo (str, e.g., 'sk', 'gu') a un valore float specifico."
+        )
+    )    
+    beta: float = Field(..., ge=0, le=1, description="Probabilità di diffusione/contagio (usato anche per F -> S).")
+    p_v: float = Field(..., ge=0, le=1, description="Probabilità di verifica (B -> FC).")
+    p_f: float = Field(..., ge=0, le=1, description="Probabilità di dimenticare (B -> S).")
+    initial_believers_perc: float = Field(..., ge=0, le=1, description="Percentuale iniziale di nodi 'Believers' (B).")
+    initial_factcheckers_perc: float = Field(..., ge=0, le=1, description="Percentuale iniziale di nodi 'Fact-Checkers' (FC).")
+    clustered: bool = Field(..., description="Se True, usa un modello di grafo che favorisce i cluster (e.g., Stochastic Block Model).")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "n_nodes": 6,
+                    "avg_degree": 2,
+                    "alpha": {"sk": 0.4, "gu": 0.95},
+                    "beta": 0.5,
+                    "p_v": 0.05,
+                    "p_f": 0.4,
+                    "initial_believers_perc": 0.05,
+                    "initial_factcheckers_perc": 0,
+                    "clustered": True
+                },
+                {
+                    "n_nodes": 10,
+                    "avg_degree": 2,
+                    "alpha": 0.15,
+                    "beta": 0.05,
+                    "p_v": 0.02,
+                    "p_f": 0.8,
+                    "initial_believers_perc": 0.02,
+                    "initial_factcheckers_perc": 0.02,
+                    "clustered": False
+                }
+                
+            ]
+        }
+    }
+
+# Stato globale del gioco in back end
+class HoaxGameState:
+    """
+    Singleton per mantenere lo stato globale del simulatore sul server:
+    parametri, configurazione, oggetto Simulation e stato attuale dei nodi.
+    """
+    def __init__(self):
+        self.params: Optional[GraphParams] = None
+        self.sim: Optional[Simulation] = None
+        self.node_states: Optional[Dict[int, str]] = None
+        self.config: Optional[HoaxConfig] = None
+        
+# inizializza logger
+logger = logging.getLogger('uvicorn.error')
+logger.setLevel(logging.DEBUG)
+
+# Inizializza lo stato globale
+GAME = HoaxGameState()
+app = FastAPI(title="Fake News Diffusion Game API")
+
+# Abilita CORS per il frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- 2. Funzioni di Supporto per la Simulazione ---
+
+def convert_keys_to_int(data: dict) -> dict:
+    """
+    Converte le chiavi stringa di un dizionario in chiavi intere dove possibile.
+    Utile per deserializzare i dati JSON in cui gli ID dei nodi sono stringhe.
+
+    Args:
+        data: Dizionario con chiavi potenzialmente stringhe (e.g., {'1': 'S'}).
+
+    Returns:
+        Dizionario con chiavi convertite in interi (e.g., {1: 'S'}).
+    """
+    return {int(k): v for k, v in data.items()}
+
+def init_nodes_state():
+    """
+    Inizializza l'attributo node_states dell'oggetto GAME con lo stato iniziale
+    ottenuto dall'oggetto di simulazione (GAME.sim).
+    """
+    if GAME.sim:
+        initial_state = GAME.sim.state()
+        logger.debug(f'initial_state: {initial_state}')
+        GAME.node_states = initial_state
+
+
+# --- 3. Definizione delle Rotte API ---
+
+## 🛠️ Inizializzazione del Simulatore
+
+@app.post("/api/v1/graph", response_model=Dict[str, Any])
+def init_game(params: GraphParams):
+    """
+    Crea il grafo iniziale e inizializza il simulatore con i parametri forniti.
+    
+    Args:
+        params: Oggetto GraphParams contenente tutti i parametri di configurazione.
+
+    Returns:
+        Un dizionario contenente i dati del grafo serializzati (nodi, archi) e lo stato iniziale dei nodi.
+
+    Raises:
+        HTTPException: Se si verifica un errore durante la creazione o l'inizializzazione.
+    """
+    try:
+        # 1. create the HoaxConfig
+        GAME.config = HoaxConfig(
+            num_nodes=params.n_nodes,
+            average_degree=params.avg_degree,
+            alpha=params.alpha,
+            beta=params.beta,
+            p_v=params.p_v,
+            p_f=params.p_f, # Corretto p_f qui
+            perc_believers=params.initial_believers_perc,
+            perc_factcheckers=params.initial_factcheckers_perc,
+            clustered=params.clustered
+        )
+
+        logger.debug(f'GAME.config: {GAME.config}')
+
+        # 2. create the graph
+        graph = create_graph(GAME.config)
+
+        # 3. init the simulator object
+        GAME.sim = Simulation(
+            graph,
+            partial(hoax_initial_state, config=GAME.config),
+            partial(hoax_state_transition, config=GAME.config),
+            stop_condition,
+            name='hoax model',
+            state_labels=['S', 'B', 'FC'],
+            state_colors=GAME.config.state_colors
+        )
+
+        init_nodes_state()
+        
+        # 4. Converte i dati del grafo in un formato serializzabile 
+        graph_data = {
+            "n_nodes": GAME.sim.G.number_of_nodes(),
+            "n_edges": GAME.sim.G.number_of_edges(),
+            "edges": list(GAME.sim.G.edges()),
+            "node_states": GAME.node_states,
+            "gullibility": nx.get_node_attributes(GAME.sim.G, 'gullibility'),
+            "partition": GAME.sim.G.graph['partition'] if 'partition' in GAME.sim.G.graph else None
+        }
+        
+        return graph_data
+    except Exception as e:
+        logger.error(f"Errore in init_game: {e}")
+        raise HTTPException(status_code=400, detail=f"Errore nella creazione del grafo: {e}")
+
+
+## 💾 Gestione dello Stato dei Nodi
+
+@app.put("/api/v1/state")
+def update_node_states(new_states: Dict[str, str]):
+    """
+    Aggiorna lo stato dei nodi del simulatore con lo stato fornito dal client.
+    Permette al client di 'forzare' o resettare uno stato specifico.
+
+    Args:
+        new_states: Dizionario con ID nodo (stringa o int) come chiave e stato ('S', 'B', 'FC') come valore.
+
+    Returns:
+        Un dizionario di conferma con il nuovo stato aggiornato.
+
+    Raises:
+        HTTPException: Se il simulatore non è inizializzato o se i dati sono malformati.
+    """
+    if GAME.sim is None or GAME.sim.G is None:
+        raise HTTPException(status_code=404, detail="Grafo non ancora creato. Creare prima il grafo tramite POST /api/v1/graph.")
+
+    try:
+        new_states = convert_keys_to_int(new_states)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Gli ID dei nodi devono essere numeri interi.")
+
+    all_nodes = set(new_states.keys())
+    if all_nodes != set(GAME.sim.G.nodes):
+        raise HTTPException(status_code=400, detail="L'insieme dei nodi negli stati non corrisponde all'insieme dei nodi del grafo.")
+        
+    all_values = set(new_states.values())
+    valid_states = {'S', 'B', 'FC'}
+    if all_values - valid_states:
+        raise HTTPException(status_code=400, detail="Lo stato dei nodi deve essere uno tra {'S', 'B', 'FC'}.")
+    
+    # Aggiorna lo stato nel grafo NetworkX
+    nx.set_node_attributes(GAME.sim.G, new_states, 'state')
+    # Aggiorna lo stato nel Singleton
+    GAME.node_states.update(new_states)
+    # Aggiorna la cronologia dello stato nel simulatore
+    GAME.sim._append_state(new_states)
+    
+    return_data =  {
+            "message": "stato dei nodi aggiornato con successo",
+            "new_node_states": GAME.node_states
+        }
+
+    return return_data
+
+
+@app.get("/api/v1/state", response_model=Dict[int, str] )
+def get_node_states():
+    """
+    Recupera e invia al client lo stato attuale dei nodi (S, B, FC).
+
+    Returns:
+        Un dizionario che mappa l'ID del nodo (int) al suo stato (str).
+
+    Raises:
+        HTTPException: Se il simulatore non è inizializzato.
+    """
+    if GAME.sim is None or GAME.sim.G is None:
+        raise HTTPException(status_code=404, detail="Grafo non ancora creato. Creare prima il grafo tramite POST /api/v1/graph.")
+    
+    return GAME.node_states
+
+
+## 🏃 Simulazione (Esecuzione di un Passo)
+
+@app.post("/api/v1/step", response_model=Dict[str,Any])
+def run_simulation_step():
+    """
+    Esegue un singolo passo di simulazione del modello SBF.
+    
+    Il metodo 'run()' dell'oggetto Simulation esegue una singola iterazione
+    utilizzando la funzione di transizione di stato configurata.
+
+    Returns:
+        Un dizionario di conferma che include il nuovo stato dei nodi dopo il passo di simulazione.
+
+    Raises:
+        HTTPException: Se il simulatore non è inizializzato.
+    """
+    if GAME.sim is None or GAME.sim.G is None:
+        raise HTTPException(status_code=404, detail="Simulatore non inizializzato. Creare prima il grafo.")
+    
+    # Esegue il passo di simulazione
+    GAME.sim.run()
+    new_states = GAME.sim.state()
+    
+    # Aggiorna lo stato globale con il nuovo stato (GAME.sim.state() è già aggiornato, 
+    # ma aggiorniamo esplicitamente GAME.node_states per consistenza)
+    GAME.node_states.update(new_states)
+
+    return_data =  {
+            "message": "passo di simulazione eseguito con successo",
+            "new_node_states": GAME.node_states
+        }
+
+    return return_data
+
+# Preset di parametri per le diverse modalità di gioco
+MODE_PRESETS = {
+    "libera": {
+        # Modalità libera: parametri bilanciati, l'utente può sperimentare
+        "alpha": 0.5,
+        "beta": 0.5,
+        "p_v": 0.4,
+        "p_f": 0.15,
+        "initial_believers_perc": 0.90,
+        "initial_factcheckers_perc": 0.02
+    },
+    "strategica": {
+        # Modalità strategica: richiede pianificazione, diffusione lenta ma persistente
+        "alpha": 0.95,   # Credulità media-alta
+        "beta": 0.1,    # Diffusione moderata
+        "p_v": 0.05,    # Verifica medio-bassa
+        "p_f": 0.0,     # Difficile dimenticare (fake persistenti)
+        "initial_believers_perc": 0.90,
+        "initial_factcheckers_perc": 0.00
+    },
+    "competitiva": {
+        # Modalità competitiva: scenario difficile, fake news aggressive
+        "alpha": 0.8,   # Alta credulità
+        "beta": 0.7,    # Alta diffusione
+        "p_v": 0.2,     # Bassa verifica
+        "p_f": 0.05,    # Quasi mai dimenticano
+        "initial_believers_perc": 0.15,
+        "initial_factcheckers_perc": 0.05
+    }
+}
+
+class LoadGraphParams(BaseModel):
+    """Parametri per caricare un grafo esterno con configurazione della simulazione."""
+    nodes: List[Dict[str, Any]] = Field(..., description="Lista dei nodi con id e attributi")
+    links: List[Dict[str, Any]] = Field(..., description="Lista degli archi (source, target)")
+    mode: Optional[str] = Field(None, description="Modalità preset: 'default', 'scientific', 'pessimistic', 'optimistic'. Se specificato, sovrascrive i parametri.")
+    alpha: Optional[float] = Field(None, description="Probabilità di credibilità (sovrascrive preset)")
+    beta: Optional[float] = Field(None, ge=0, le=1, description="Probabilità di diffusione (sovrascrive preset)")
+    p_v: Optional[float] = Field(None, ge=0, le=1, description="Probabilità di verifica (sovrascrive preset)")
+    p_f: Optional[float] = Field(None, ge=0, le=1, description="Probabilità di dimenticare (sovrascrive preset)")
+    initial_believers_perc: Optional[float] = Field(None, ge=0, le=1, description="Percentuale iniziale Believers (sovrascrive preset)")
+    initial_factcheckers_perc: Optional[float] = Field(None, ge=0, le=1, description="Percentuale iniziale Fact-Checkers (sovrascrive preset)")
+
+def get_effective_params(params: LoadGraphParams) -> dict:
+    """Restituisce i parametri effettivi basati sulla modalità e eventuali override."""
+    # Parti dal preset (libera se non specificato)
+    mode = params.mode or "libera"
+    preset = MODE_PRESETS.get(mode, MODE_PRESETS["libera"]).copy()
+    
+    # Override con valori espliciti se forniti
+    if params.alpha is not None:
+        preset["alpha"] = params.alpha
+    if params.beta is not None:
+        preset["beta"] = params.beta
+    if params.p_v is not None:
+        preset["p_v"] = params.p_v
+    if params.p_f is not None:
+        preset["p_f"] = params.p_f
+    if params.initial_believers_perc is not None:
+        preset["initial_believers_perc"] = params.initial_believers_perc
+    if params.initial_factcheckers_perc is not None:
+        preset["initial_factcheckers_perc"] = params.initial_factcheckers_perc
+    
+    return preset
+
+@app.post("/api/v1/graph/load", response_model=Dict[str, Any])
+def load_external_graph(params: LoadGraphParams):
+    """
+    Carica un grafo esterno (es. graph.json) e inizializza il simulatore.
+    
+    Modalità disponibili:
+    - libera: parametri bilanciati per sperimentare
+    - strategica: diffusione lenta ma persistente, richiede pianificazione
+    - competitiva: scenario difficile, fake news aggressive
+    """
+    try:
+        # Ottieni i parametri effettivi in base alla modalità
+        effective = get_effective_params(params)
+        logger.info(f"🎮 Modalità: {params.mode or 'default'}, Parametri: {effective}")
+        
+        # 1. Crea il grafo NetworkX dai dati esterni
+        G = nx.Graph()
+        
+        # Aggiungi nodi
+        node_ids = []
+        for i, node in enumerate(params.nodes):
+            node_id = i  # Usa indice numerico
+            node_ids.append(node_id)
+            G.add_node(node_id, **{k: v for k, v in node.items() if k != 'id'})
+        
+        # Mappa id originali -> indici numerici
+        original_ids = [node.get('id', i) for i, node in enumerate(params.nodes)]
+        id_map = {orig: idx for idx, orig in enumerate(original_ids)}
+        
+        # Aggiungi archi
+        for link in params.links:
+            src = id_map.get(link['source'], link.get('source'))
+            tgt = id_map.get(link['target'], link.get('target'))
+            if src in G.nodes and tgt in G.nodes:
+                G.add_edge(src, tgt)
+        
+        n_nodes = G.number_of_nodes()
+        avg_degree = sum(dict(G.degree()).values()) / n_nodes if n_nodes > 0 else 0
+        
+        # 2. Crea la configurazione usando i parametri effettivi
+        GAME.config = HoaxConfig(
+            num_nodes=n_nodes,
+            average_degree=int(avg_degree),
+            alpha=effective["alpha"],
+            beta=effective["beta"],
+            p_v=effective["p_v"],
+            p_f=effective["p_f"],
+            perc_believers=effective["initial_believers_perc"],
+            perc_factcheckers=effective["initial_factcheckers_perc"],
+            clustered=False,
+            verbose=False
+        )
+        
+        # 3. Imposta gullibility sui nodi
+        alpha_val = effective["alpha"]
+        for node in G.nodes:
+            G.nodes[node]['gullibility'] = alpha_val
+        
+        # 4. Inizializza il simulatore
+        GAME.sim = Simulation(
+            G,
+            partial(hoax_initial_state, config=GAME.config),
+            partial(hoax_state_transition, config=GAME.config),
+            stop_condition,
+            name='hoax model (external graph)',
+            state_labels=['S', 'B', 'FC'],
+            state_colors=GAME.config.state_colors
+        )
+        
+        init_nodes_state()
+        
+        # 5. Prepara risposta
+        graph_data = {
+            "n_nodes": G.number_of_nodes(),
+            "n_edges": G.number_of_edges(),
+            "edges": list(G.edges()),
+            "node_states": GAME.node_states,
+            "gullibility": nx.get_node_attributes(G, 'gullibility'),
+            "id_map": {str(k): v for k, v in id_map.items()}  # Per mappare ID originali
+        }
+        
+        logger.info(f"Grafo esterno caricato: {n_nodes} nodi, {G.number_of_edges()} archi")
+        return graph_data
+        
+    except Exception as e:
+        logger.error(f"Errore in load_external_graph: {e}")
+        raise HTTPException(status_code=400, detail=f"Errore nel caricamento del grafo: {e}")
+
+# --- 4. Esecuzione del Server ---
+# Esegui con: uvicorn hoax_api:app --reload

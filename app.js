@@ -1,4 +1,8 @@
-// ===== costanti fisse =====
+// =============================================================================
+// COSTANTI GLOBALI DEL SISTEMA
+// Parametri invarianti che definiscono i vincoli temporali e le soglie
+// del modello di simulazione epidemiologica della disinformazione.
+// =============================================================================
 const CONST = {
   DAYS: 7,
   FORGET_DAYS: 3,
@@ -6,7 +10,11 @@ const CONST = {
   SOURCES: { Facebook:0.7, Fanpage:0.6, AIFA:1.0, Reuters:0.95, BlogX:0.35 }
 };
 
-// ===== SISTEMA TROFEI (20+ Achievements) =====
+// =============================================================================
+// SISTEMA DI ACHIEVEMENT (TROFEI)
+// Meccanismo di gamification per incentivare l'esplorazione delle dinamiche
+// di diffusione dell'informazione attraverso obiettivi progressivi.
+// =============================================================================
 const TROPHY_SYSTEM = {
   trophies: [
     // Trofei Fake News
@@ -65,43 +73,48 @@ const TROPHY_SYSTEM = {
     return false;
   },
   checkUnlocks: function() {
-    // Controlla tutti i trofei in base alle stats
+    // Verifica di tutti i trofei in base alle statistiche accumulate
     const s = this.stats;
     const c = computeCounts && computeCounts() || {};
     const tot = state.nodes ? state.nodes.length : 1;
     const fakePct = pct(c.fake, tot);
     const truthPct = pct(c.truth, tot);
     
-    // Fake News trophies
+    // Trofei Disinformazione (Fake News)
     if (fakePct > 70) this.unlock('fake_rising');
     if (fakePct > 85) this.unlock('fake_dominance');
     if (s.fakeVirusCount >= 5) this.unlock('fake_viral');
     if (s.sabotageCount >= 3) this.unlock('fake_saboteur');
     if (s.stealCount >= 3) this.unlock('fake_thief');
     
-    // Verità trophies
+    // Trofei Verita (Fact-Checking)
     if (truthPct > 70) this.unlock('truth_rising');
     if (truthPct > 85) this.unlock('truth_dominance');
     if (s.massDebunkCount >= 5) this.unlock('truth_debunker');
     if (s.eternalFCCount >= 10) this.unlock('truth_guardian');
     if (s.predictionsCorrect >= 3) this.unlock('truth_prophecy');
     
-    // Competitivi
+    // Trofei Competitivi
     if (s.competitiveVictories >= 1) this.unlock('comp_victor');
     if (s.competitiveVictories >= 3) this.unlock('comp_streak');
     if (s.maxCoins >= 1000) this.unlock('comp_riches');
     if (Object.keys(s.boostsUsed).length >= 15) this.unlock('comp_strategist');
     
-    // Exploration
+    // Trofei Esplorazione
     if (s.modesPlayed.size >= 3) this.unlock('all_modes');
     if (Math.abs(fakePct - truthPct) <= 10 && fakePct > 30) this.unlock('perfect_balance');
     
-    // Rari
+    // Trofei Rari
     if (s.memoryWipeCount >= 5) this.unlock('memory_master');
   }
 };
 
-// ===== BOOST MANAGER - Centralizza stato, durata e effetti =====
+// =============================================================================
+// GESTORE DEI POTENZIAMENTI (BOOST MANAGER)
+// Classe responsabile della gestione centralizzata degli effetti temporanei
+// che modificano i parametri della simulazione per periodi limitati.
+// Implementa il pattern Observer per notificare lo stato dei boost attivi.
+// =============================================================================
 class BoostManager {
   constructor() {
     this.boosts = {};
@@ -131,11 +144,16 @@ class BoostManager {
   }
 }
 
-// ===== CPU OPPONENT - AI che gioca in parallelo =====
+// =============================================================================
+// AVVERSARIO CONTROLLATO DALL'INTELLIGENZA ARTIFICIALE
+// Implementazione di un agente autonomo che compete contro il giocatore
+// nella modalita competitiva. L'algoritmo decisionale si basa su euristiche
+// che valutano lo stato corrente della rete e le risorse disponibili.
+// =============================================================================
 class CPUOpponent {
   constructor(difficulty = 'beginner') {
     this.coins = 400;
-    this.difficulty = difficulty; // beginner, expert, extreme
+    this.difficulty = difficulty; // Livelli: beginner, expert, extreme
     this.boostMgr = new BoostManager();
     this.lastFakeCount = 0;
     this.lastTruthCount = 0;
@@ -177,9 +195,16 @@ class CPUOpponent {
   }
 }
 
+// =============================================================================
+// STATO GLOBALE DELL'APPLICAZIONE
+// Struttura dati centralizzata che mantiene lo stato corrente della simulazione,
+// inclusi i nodi del grafo, gli archi, lo storico giornaliero e i parametri
+// del modello scientifico. Questo oggetto rappresenta la singola fonte di verita
+// per l'intera applicazione (pattern Single Source of Truth).
+// =============================================================================
 const state = {
   appName: "Giancarlo Ruffo",
-  // Invariante: currentDay = PROSSIMO giorno da simulare (parte da 1)
+  // Invariante: currentDay indica il PROSSIMO giorno da simulare (inizia da 1)
   currentDay: 1,
   nodes: [],
   links: [],
@@ -190,7 +215,7 @@ const state = {
     enabled: false,  // Attiva il modello scientifico S-B-F
     segregationMetrics: {}  // Metriche di segregazione rete
   },
-  // Game state - Strategica & Competitiva
+  // Stato del sistema di gioco - Modalita Strategica e Competitiva
   game: {
     coins: 500,
     movesLeft: 3,
@@ -205,18 +230,27 @@ const state = {
   }
 };
 
-// SVG + layers
+// =============================================================================
+// CONFIGURAZIONE DEL CANVAS SVG E DEI LAYER DI RENDERING
+// Struttura gerarchica degli elementi grafici per la visualizzazione del grafo.
+// L'ordine dei layer determina la priorita di rendering (z-index implicito).
+// =============================================================================
 const svg   = d3.select("#graph");
-const root  = svg.append("g");                // trasformato da zoom
-const bg    = root.append("rect")             // background sotto i nodi (cattura pan/zoom)
+const root  = svg.append("g");                // Contenitore principale trasformato dallo zoom
+const bg    = root.append("rect")             // Sfondo trasparente per intercettare eventi pan/zoom
                  .attr("fill", "transparent")
                  .attr("x", 0).attr("y", 0);
-const gLinks= root.append("g").attr("stroke", "#26334a");
-const gNodes= root.append("g");
+const gLinks= root.append("g").attr("stroke", "#26334a");  // Layer degli archi
+const gNodes= root.append("g");                             // Layer dei nodi
 
-let simulation;
+let simulation;                               // Riferimento alla simulazione D3 force-directed
+let currentNodes = [];                        // Cache dei nodi correnti per aggiornamenti incrementali
 
-// ===== util =====
+// =============================================================================
+// FUNZIONI DI UTILITA
+// Helper functions per operazioni comuni: selezione DOM, normalizzazione,
+// calcolo percentuali e generazione di numeri casuali con distribuzione normale.
+// =============================================================================
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const clamp01 = x => Math.max(0, Math.min(1, x));
@@ -225,311 +259,475 @@ function rndNormal(m=0.5,s=0.2){let u=0,v=0;while(!u)u=Math.random();while(!v)v=
 
 
 
-// ===== build & render grafo =====
-function buildGraph(N=120, useScientificModel=false){
-  if (useScientificModel && typeof generateSegregatedNetwork !== 'undefined') {
-    // MODELLO SCIENTIFICO: Genera rete segregata dal paper
-    const rho = SCIENTIFIC_PARAMS.rho || 0.6;
-    const gamma = SCIENTIFIC_PARAMS.gamma || 0.5;
-    
-    const { nodes: scientificNodes, links: scientificLinks } = generateSegregatedNetwork(N, rho, gamma);
-    
-    // Conserva riferimento agli oggetti ScientificNodeState
-    state.scientificNodes = scientificNodes;
-    
-    // Inizializza seeders: B0 = 10% believers in gullible community, F0 = 10% fact-checkers in skeptic community
-    const gullibleNodes = scientificNodes.filter(n => n.community === 'gullible');
-    const skepticNodes = scientificNodes.filter(n => n.community === 'skeptic');
-    
-    const B0 = Math.max(1, Math.floor(gullibleNodes.length * 0.35));
-    const F0 = Math.max(1, Math.floor(skepticNodes.length * 0.1));
-    
-    // Assegna stato iniziale B a believers (gullible community)
-    for (let i = 0; i < B0; i++) {
-      gullibleNodes[i].state = 'B';
-      gullibleNodes[i].timeInState = 0;
+// =============================================================================
+// COSTRUZIONE E INIZIALIZZAZIONE DEL GRAFO
+// Funzione asincrona che carica la struttura del grafo dal file JSON locale
+// e la invia all'API backend per l'inizializzazione della simulazione.
+// I parametri del modello epidemiologico (alpha, beta, p_v, p_f) sono
+// determinati esclusivamente dall'API in base alla modalita selezionata.
+// =============================================================================
+async function buildGraph(N=336, useScientificModel=false){
+  try {
+    // Aspetta che graph.json sia caricato
+    if (!graphDataReady || !graphData) {
+      console.log('In attesa del caricamento di graph.json...');
+      await new Promise(resolve => {
+        const checkInterval = setInterval(() => {
+          if (graphDataReady && graphData) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+      });
     }
+
+    // Mappa modalità UI → modalità API
+    const modeMap = {
+      "Strategica": "strategica",
+      "Competitiva": "competitiva", 
+      "Libera": "libera"
+    };
     
-    // Assegna stato iniziale F a fact-checkers (skeptic community)
-    for (let i = 0; i < F0; i++) {
-      skepticNodes[i].state = 'F';
-      skepticNodes[i].timeInState = 0;
-    }
+    const apiMode = modeMap[selectedMode] || "libera";
     
-    // Converti a formato visualizzazione D3
-    state.nodes = scientificNodes.map(sn => ({
-      id: sn.nodeId,
-      role: sn.community === 'gullible' ? 'credulone' : 'fact_checker',
-      community: sn.community,
-      memory: "neutral",
+    // Passa SOLO la modalità - TUTTI i parametri vengono dall'API!
+    const simParams = {
+      mode: apiMode
+    };
+
+    console.log(`Modalita selezionata: ${selectedMode} - API mode: ${simParams.mode}`);
+    console.log(`Parametri delegati all'API (mode: ${apiMode})`);
+
+    // Carica IL TUO graph.json nell'API (stesso grafo del sito!)
+    const apiResponse = await hoaxClient.loadGraph(graphData, simParams);
+
+    // Calcola le statistiche dagli stati dei nodi ricevuti dall'API
+    const nodeStates = apiResponse.node_states;
+    const totalNodes = Object.keys(nodeStates).length;
+    const initialBelievers = Object.values(nodeStates).filter(s => s === 'B').length;
+    const initialFactCheckers = Object.values(nodeStates).filter(s => s === 'FC').length;
+    const initialSusceptible = Object.values(nodeStates).filter(s => s === 'S').length;
+    
+    // Log dei parametri EFFETTIVI decisi dall'API (calcolati dai risultati)
+    console.log(`Risultato dall'API (mode: ${apiMode}):
+    - Nodi totali: ${totalNodes}
+    - Believers iniziali (B): ${initialBelievers} (${(initialBelievers/totalNodes*100).toFixed(1)}%)
+    - Fact-Checkers iniziali (FC): ${initialFactCheckers} (${(initialFactCheckers/totalNodes*100).toFixed(1)}%)
+    - Susceptible iniziali (S): ${initialSusceptible} (${(initialSusceptible/totalNodes*100).toFixed(1)}%)`);
+
+    // Converti i dati API nel formato D3 atteso
+    state.nodes = Object.entries(apiResponse.node_states).map(([nodeId, nodeState]) => ({
+      id: parseInt(nodeId),
+      scientificState: nodeState, // S, B, FC
+      role: nodeState === 'FC' ? 'fact_checker' : (nodeState === 'B' ? 'credulone' : 'neutral'),
+      community: apiResponse.gullibility && apiResponse.gullibility[parseInt(nodeId)] > 0.5 ? 'gullible' : 'skeptic',
+      memory: nodeState === 'B' ? 'fake' : (nodeState === 'FC' ? 'truth' : 'neutral'),
       memoryTime: 0,
-      scientificState: sn.state,  // S, B, F
-      susceptibility: sn.alpha,
-      isEternalFC: false  // Flag per eternal fact-checkers
+      susceptibility: 0.5,
+      isEternalFC: false
     }));
-    
-    state.links = scientificLinks.map(l => ({
-      source: l.source,
-      target: l.target,
+
+    // Converti gli edge
+    state.links = apiResponse.edges.map(([src, tgt]) => ({
+      source: src,
+      target: tgt,
       w: 0.6 + Math.random() * 0.8
     }));
+
+    state.scientificModel.enabled = useScientificModel;
     
-    // Calcola metriche di segregazione
-    state.scientificModel.segregationMetrics = calculateSegregationMetrics(scientificNodes, scientificLinks);
-    state.scientificModel.enabled = true;
+    // Salva info base del modello (i parametri reali sono nell'API)
+    if (useScientificModel) {
+      state.scientificModel.info = {
+        mode: apiMode,
+        totalNodes: totalNodes,
+        initialBelieversCount: initialBelievers,
+        initialFactCheckersCount: initialFactCheckers,
+        avgDegree: 2 * state.links.length / state.nodes.length
+      };
+    }
     
-  } else {
-    // MODELLO LEGACY: distribuzione casuale dei ruoli
-    const fcPct = 0.2, crPct = 0.5;
-    state.nodes = d3.range(N).map(i=>{
-      const r=Math.random();
-      let role="neutral";
-      if(r<fcPct) role="fact_checker";
-      else if(r<fcPct+crPct) role="credulone";
-      return { id:i, role, community:"neutral", memory:"neutral", memoryTime:0, susceptibility:rndNormal(0.5,0.2), scientificState:'S' };
+    state.gameNodes = state.nodes.slice();
+    
+    console.log(`Grafo caricato via API: ${state.nodes.length} nodi, ${state.links.length} archi`);
+    
+    // Aggiorna KPI e conteggi iniziali
+    updateKPI();
+    
+    // Aggiorna il rendering del grafo con i nuovi stati
+    if (typeof renderGraph === 'function') {
+      renderGraph();
+    }
+  } catch (error) {
+    console.error('Errore buildGraph:', error);
+    showToast(`Errore: ${error.message}`);
+  }
+}
+
+// =============================================================================
+// FUNZIONE DI COLORAZIONE DEI NODI
+// Mappa lo stato epidemiologico di ciascun nodo al colore corrispondente
+// secondo la convenzione visiva del modello SBF (Susceptible-Believer-FactChecker).
+// =============================================================================
+function colorFill(d){ 
+  // Lo stato scientifico determina univocamente il colore del nodo
+  if (d.scientificState === 'B') return "#ff4757";      // Rosso: Believer (diffusore di disinformazione)
+  if (d.scientificState === 'FC') return "#2ed573";     // Verde: Fact-Checker (verificatore)
+  return "#c0c8d8";                                     // Grigio: Susceptible (suscettibile)
+}
+
+
+// =============================================================================
+// SINCRONIZZAZIONE DELLO STATO CON IL BACKEND (OPERAZIONE PUT)
+// Trasmette lo stato epidemiologico di tutti i nodi al server API.
+// Questa operazione deve essere invocata dopo modifiche strutturali
+// che alterano lo stato della rete (es. debunking massivo, assegnazione
+// di Fact-Checker permanenti, applicazione di strategie di immunizzazione).
+// =============================================================================
+async function syncStateToServer() {
+  try {
+    if (!state.nodes || state.nodes.length === 0) return;
+
+    const payload = {};
+    state.nodes.forEach(n => {
+      payload[String(n.id)] = n.scientificState;
     });
 
-    state.links = [];
-    const p = 0.02 + (N>150?0.01:0);
-    for(let i=0;i<N;i++) for(let j=i+1;j<N;j++) if(Math.random()<p) state.links.push({source:i,target:j,w:0.6+Math.random()*0.8});
-    if(state.links.length===0) for(let i=0;i<N-1;i++) state.links.push({source:i,target:i+1,w:1});
-    
-    state.scientificModel.enabled = false;
+    const res = await fetch('http://localhost:8000/api/v1/state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      throw new Error(`PUT /state failed (${res.status})`);
+    }
+
+    console.log('Stato sincronizzato con il backend');
+  } catch (err) {
+    console.error('Errore syncStateToServer:', err);
+    showToast('Errore sincronizzazione con il backend');
   }
-  
-  // Sincronizza gameNodes: crea array che mapperà graph.json nodes (336) ai game state nodes
-  state.gameNodes = state.nodes.slice();
 }
 
-function colorFill(d){ 
-  // Usa SOLO lo scientificState per il colore principale
-  if (d.scientificState === 'B') return "#ff4757";      // ROSSO per Believer (Fake news)
-  if (d.scientificState === 'F') return "#2ed573";      // VERDE per Fact-Checker (Verità)
-  return "#c0c8d8";                                      // GRIGIO per Susceptible (Neutrale)
+// =============================================================================
+// AGGIORNAMENTO DELLO STATO DAL SERVER (OPERAZIONE GET)
+// Recupera lo stato corrente della simulazione dal backend e sincronizza
+// la rappresentazione locale. Utile per allineare il frontend dopo
+// operazioni eseguite tramite interfacce alternative (es. Swagger UI).
+// =============================================================================
+async function refreshStateFromServer() {
+  try {
+    const response = await fetch('http://localhost:8000/api/v1/state');
+    if (!response.ok) {
+      if (response.status === 404) {
+        showToast('⚠️ Nessun grafo sul server. Usa Inizializza prima.');
+        return;
+      }
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const nodeStates = await response.json();
+    console.log('Refresh stato dal server:', Object.keys(nodeStates).length, 'nodi');
+    
+    // Aggiornamento incrementale degli stati dei nodi nella cache locale
+    let updated = 0;
+    for (const [nodeId, newState] of Object.entries(nodeStates)) {
+      const node = state.nodes.find(n => n.id === parseInt(nodeId));
+      if (node && node.scientificState !== newState) {
+        node.scientificState = newState;
+        node.memory = newState === 'B' ? 'fake' : (newState === 'FC' ? 'truth' : 'neutral');
+        updated++;
+      }
+    }
+    
+    console.log(`Aggiornati ${updated} nodi`);
+    
+    // Aggiorna grafica
+    updateKPI();
+    d3.select('#graph').selectAll('circle')
+      .attr('fill', d => colorFill(d));
+    
+    showToast(`🔄 Stato sincronizzato: ${updated} nodi aggiornati`);
+  } catch (error) {
+    console.error('Errore refresh:', error);
+    showToast(`❌ Errore: ${error.message}`);
+  }
 }
+
+// =============================================================================
+// FUNZIONI DI STILE VISIVO PER NODI E ARCHI
+// Definiscono l'aspetto grafico degli elementi del grafo in base
+// al loro stato epidemiologico e alle proprieta speciali (es. immunita).
+// =============================================================================
 
 function colorStroke(d){ 
-  // Usa bordo molto più spesso e vivace per gli Eternal Fact-Checkers
-  if (d.isEternalFC) return "#00d4ff";      // CYAN BRILLANTE per Eternal Fact-Checker
-  return "rgba(255,255,255,0.1)";           // Bianco quasi trasparente per gli altri
+  // Evidenziazione visiva per i Fact-Checker permanenti (immunita acquisita)
+  if (d.isEternalFC) return "#00d4ff";      // Ciano brillante per Fact-Checker permanenti
+  return "rgba(255,255,255,0.1)";           // Bordo semi-trasparente per nodi standard
 }
 
 function strokeWidth(d) {
-  // Bordo SUPER SPESSO per gli Eternal Fact-Checkers - MAXIMAMENTE VISIBILE
+  // Spessore del bordo proporzionale all'importanza del nodo
   return d.isEternalFC ? 8 : 0.5;
 }
 
 function linkColor(d) {
-  // Link BIANCHI super visibili nel grafo
+  // Colore uniforme per gli archi della rete sociale
   return "rgba(255, 255, 255, 0.8)";
 }
 
 function linkStrokeWidth(d) {
-  // Link SPESSI e visibili
+  // Spessore dell'arco proporzionale al peso della connessione
   return Math.max(2, d.w * 2);
 }
 
 let graphData = null;
 let graphDataReady = false;
 
-// Load graph.json data
+// =============================================================================
+// CARICAMENTO ASINCRONO DEL GRAFO STRUTTURALE
+// Recupera la topologia della rete sociale dal file JSON predefinito.
+// Il grafo contiene le coordinate spaziali dei nodi e le relazioni di vicinato.
+// =============================================================================
 fetch('graph.json')
   .then(response => response.json())
   .then(data => {
     graphData = data;
     graphDataReady = true;
-    console.log('graph.json caricato:', graphData.nodes.length, 'nodi');
+    console.log('graph.json caricato:', graphData.nodes.length, 'nodi (posizioni e cluster)');
+    // Rendering automatico al completamento del caricamento
+    renderGraph();
   })
   .catch(err => console.warn('graph.json non trovato', err));
 
-// Color function: supports game state (Eternal FC / Believer/Fact-Checker/Susceptible)
-// Può essere usata sia in renderGraph() che in stepOneDay()
+// =============================================================================
+// FUNZIONE UNIFICATA DI COLORAZIONE DEI NODI
+// Determina il colore di riempimento di un nodo in base al suo stato
+// epidemiologico corrente. Supporta sia lo stato proveniente dall'API
+// che la classificazione basata su attributi locali del grafo.
+// =============================================================================
 const nodeColor = (d) => {
-  // Game state - Eternal Fact-Checkers (massima priorità)
-  if (d.isEternalFC) return "#00d4ff"; // Cyan brillante
+  // Stato di gioco - Fact-Checker permanenti (massima priorita)
+  if (d.isEternalFC) return "#00d4ff"; // Ciano brillante
   
-  // Game state nodes (Believer/Fact-Checker/Susceptible)
-  if (d.scientificState === 'F') return "#2ed573"; // Truth Green (Fact-Checker)
-  if (d.scientificState === 'B') return "#ff4757"; // Fake Red (Believer)
-  if (d.scientificState === 'S') return "#c0c8d8"; // Neutral Gray (Susceptible)
-  
-  // graph.json nodes: classify by radius (citations count = impact)
-  if (d.radius !== undefined) {
-    // High radius (7+) = Believers (heavily cited, strong influence)
-    if (d.radius >= 7) return "#ff4757"; // Red (Believer)
-    // Medium radius (3-6) = Fact-Checkers (moderate evidence)
-    if (d.radius >= 3) return "#2ed573"; // Green (Fact-Checker)
-    // Low radius (1-2) = Susceptible (weak evidence)
-    return "#c0c8d8"; // Gray (Susceptible)
+  // Classificazione in base allo stato epidemiologico (Believer/Fact-Checker/Susceptible)
+  if (d.scientificState === 'FC') {
+    return "#2ed573"; // Verde: Fact-Checker (verificatore)
+  }
+  if (d.scientificState === 'B') {
+    return "#ff4757"; // Rosso: Believer (diffusore di disinformazione)
+  }
+  if (d.scientificState === 'S') {
+    return "#c0c8d8"; // Grigio: Susceptible (suscettibile)
   }
   
-  return "#c0c8d8"; // Default Neutral Gray
+  // Classificazione alternativa basata sul raggio (grado di influenza)
+  // Utilizzata quando lo stato epidemiologico non e disponibile
+  if (d.radius !== undefined) {
+    // Raggio elevato (>=7): nodi ad alta influenza, classificati come Believer
+    if (d.radius >= 7) return "#ff4757";
+    // Raggio medio (3-6): nodi moderatamente influenti, classificati come Fact-Checker
+    if (d.radius >= 3) return "#2ed573";
+    // Raggio basso (<3): nodi a bassa influenza, classificati come Susceptible
+    return "#c0c8d8";
+  }
+  
+  return "#c0c8d8"; // Colore predefinito: grigio neutrale
 };
 
+// =============================================================================
+// SELEZIONE DI UN SOTTOGRAFO CONNESSO
+// Estrae dalla struttura completa un sottografo di dimensione specificata,
+// preservando la connettivita. L'algoritmo utilizza BFS per identificare
+// le componenti connesse e seleziona i nodi dalle componenti piu grandi.
+// =============================================================================
+function selectConnectedSubset(graphData, numNodes) {
+  const nodes = graphData.nodes || [];
+  const links = graphData.links || [];
+
+  // Costruzione della lista di adiacenza per la ricerca in ampiezza (BFS)
+  const adj = new Map();
+  nodes.forEach(n => {
+    adj.set(n.id, new Set());
+  });
+  links.forEach(l => {
+    if (adj.has(l.source) && adj.has(l.target)) {
+      adj.get(l.source).add(l.target);
+      adj.get(l.target).add(l.source);
+    }
+  });
+
+  // Identificazione delle componenti connesse mediante visita in ampiezza
+  const visited = new Set();
+  const components = [];
+  for (const n of nodes) {
+    const start = n.id;
+    if (visited.has(start)) continue;
+    const queue = [start];
+    const comp = [];
+    visited.add(start);
+    while (queue.length) {
+      const cur = queue.shift();
+      comp.push(cur);
+      const neighbors = adj.get(cur) || new Set();
+      neighbors.forEach(nb => {
+        if (!visited.has(nb)) {
+          visited.add(nb);
+          queue.push(nb);
+        }
+      });
+    }
+    components.push(comp);
+  }
+
+  // Ordinamento decrescente per cardinalita e selezione dei primi numNodes nodi
+  components.sort((a, b) => b.length - a.length);
+  const selectedIds = [];
+  for (const comp of components) {
+    for (const id of comp) {
+      if (selectedIds.length >= numNodes) break;
+      selectedIds.push(id);
+    }
+    if (selectedIds.length >= numNodes) break;
+  }
+
+  // Costruzione dei sottoinsiemi filtrati di nodi e archi
+  const idSet = new Set(selectedIds);
+  const nodesSubset = nodes.filter(n => idSet.has(n.id));
+  const linksSubset = links.filter(l => idSet.has(l.source) && idSet.has(l.target));
+
+  return { nodesSubset, linksSubset, selectedIds };
+}
+
+// =============================================================================
+// RENDERING DEL GRAFO CON D3.JS FORCE-DIRECTED LAYOUT
+// Visualizza la rete sociale utilizzando un algoritmo di layout basato su forze.
+// I nodi sono posizionati mediante simulazione fisica che bilancia
+// attrazione (archi) e repulsione (forza elettrostatica tra nodi).
+// =============================================================================
 function renderGraph(){
-  // Aspetta che graph.json sia caricato
   if (!graphDataReady || !graphData) {
-    console.warn('graph.json ancora in caricamento, ritentando...');
-    setTimeout(renderGraph, 500);
+    console.error('graph.json non caricato');
     return;
   }
-  
-  // Specify the dimensions of the chart.
+
+  // Configurazione delle dimensioni del canvas SVG
   const width = svg.node().getBoundingClientRect().width;
   const height = svg.node().getBoundingClientRect().height;
+  svg.attr("width", width).attr("height", height).attr("viewBox", [-width/2, -height/2, width, height]);
 
-  svg.attr("width", width).attr("height", height);
+  // Creazione di copie degli array per evitare mutazioni dell'originale
+  // (la simulazione D3 modifica direttamente le coordinate dei nodi)
+  const links = graphData.links.map(d => ({...d}));
+  const nodes = graphData.nodes.map(d => ({...d}));
 
-  // USA SOLO graph.json nodes per la simulazione con 336 nodi
-  let nodes, links;
-  
-  if (!graphData || !graphData.nodes || graphData.nodes.length === 0) {
-    console.error('graph.json non disponibile!');
-    return;
-  }
-  
-  // Copia graph.json nodes e links
-  // Sincronizza scientificState dai game nodes (state.nodes) ai graph.json nodes
-  nodes = graphData.nodes.map((d, idx) => {
-    let scientificState = 'S'; // Default Susceptible
-    
-    // Distribuisci i game nodes ai graph.json nodes mediante mapping ciclico
-    if (state.nodes && state.nodes.length > 0) {
-      const gameNodeIdx = idx % state.nodes.length;
-      scientificState = state.nodes[gameNodeIdx].scientificState || 'S';
+  console.log('graph.json:', nodes.length, 'nodi,', links.length, 'archi');
+
+  // Costruzione della mappa di corrispondenza tra ID nodo e stato epidemiologico
+  const stateMap = new Map();
+  if (state.nodes && state.nodes.length > 0) {
+    state.nodes.forEach((n) => {
+      // Mappa per ID del nodo (non per indice)
+      stateMap.set(n.id, n.scientificState);
+    });
+    console.log('Overlay stati API:', state.nodes.length, 'nodi');
+
+// =============================================================================
+// MAPPING TRA NODI GRAFICI E NODI DELLA SIMULAZIONE
+// Associa a ciascun nodo del grafo visuale l'identificatore corrispondente
+// nella simulazione API, consentendo la sincronizzazione bidirezionale.
+// =============================================================================
+if (state.nodes && state.nodes.length) {
+  nodes.forEach((d, i) => {
+    const simNode = state.nodes[i];
+    if (simNode) {
+      d.simId = simNode.id;                 // Identificatore numerico dell'API
+      d.scientificState = simNode.scientificState;
     } else {
-      // Fallback: classifica per radius
-      if (d.radius >= 7) scientificState = 'B'; // Believer
-      else if (d.radius >= 3) scientificState = 'F'; // Fact-Checker
-      else scientificState = 'S'; // Susceptible
-    }
-    
-    return {
-      ...d,
-      id: d.id || idx,
-      scientificState,
-      radius: d.radius || 5,
-      index: idx
-    };
-  });
-  
-  links = graphData.links.map(d => ({...d}));
-
-  // Classifica i nodi per tipo (Believer/Fact-Checker/Susceptible)
-  nodes.forEach(d => {
-    if (d.scientificState === 'B') {
-      d.type = 'Believer (Fake)';
-      d.group = 'Believer';
-    }
-    else if (d.scientificState === 'F') {
-      d.type = 'Fact-Checker (Verità)';
-      d.group = 'Fact-Checker';
-    }
-    else if (d.scientificState === 'S') {
-      d.type = 'Susceptible (Neutrale)';
-      d.group = 'Susceptible';
-    }
-    else if (d.isEternalFC) {
-      d.type = 'Eternal Fact-Checker';
-      d.group = 'Fact-Checker';
-    }
-    else if (d.radius !== undefined && d.radius > 0) {
-      // Classifica per radius (numero di citazioni)
-      if (d.radius >= 7) {
-        d.type = 'Believer (Alta influenza)';
-        d.group = 'Believer';
-      }
-      else if (d.radius >= 3) {
-        d.type = 'Fact-Checker (Media influenza)';
-        d.group = 'Fact-Checker';
-      }
-      else {
-        d.type = 'Susceptible (Bassa influenza)';
-        d.group = 'Susceptible';
-      }
-    }
-    else {
-      d.type = 'Unknown';
-      d.group = 'Susceptible';
+      d.simId = null;
     }
   });
+}
+  }
 
-  // The force simulation mutates links and nodes, so create a copy
-  // so that re-evaluating this cell produces the same result.
+  // Memorizzazione del riferimento globale per aggiornamenti incrementali
+  currentNodes = nodes;
 
-  // Stop previous simulation
+  // Interruzione della simulazione precedente per evitare conflitti
   if(simulation) simulation.stop();
 
-  // Create a simulation with several forces.
+  // Inizializzazione della simulazione force-directed con forze multiple
+  // (pattern di layout tipico delle visualizzazioni di reti sociali)
   simulation = d3.forceSimulation(nodes)
       .force("link", d3.forceLink(links).id(d => d.id))
       .force("charge", d3.forceManyBody())
       .force("x", d3.forceX())
       .force("y", d3.forceY());
 
-  // Add a line for each link, and a circle for each node.
-  const link = gLinks.selectAll("line").data(links, d=>`${d.source.id || d.source}-${d.target.id || d.target}`);
-  link.exit().remove();
-  link.enter()
-    .append("line")
-    .attr("stroke", "rgba(255, 255, 255, 0.8)")
-    .attr("stroke-opacity", 0.6)
-    .merge(link)
-    .attr("stroke-width", d => Math.sqrt(d.value || d.w || 1));
+  // Creazione degli elementi grafici per gli archi (linee)
+  const link = gLinks.selectAll("line")
+    .data(links, d => `${d.source.id || d.source}-${d.target.id || d.target}`)
+    .join("line")
+      .attr("stroke", "#999")
+      .attr("stroke-opacity", 0.6)
+      .attr("stroke-width", d => Math.sqrt(d.value));
 
-  const node = gNodes.selectAll("circle").data(nodes, d => d.id);
-  node.exit().remove();
-  
-  const newNodes = node.enter()
-    .append("circle")
-    .attr("class", "node")
-    .on("click", (ev, d) => {
-      console.log(`Node clicked: [${d.type}]`, d);
-      // Sempre apri il modale, indipendentemente da state.nodes
-      // (che potrebbe avere meno nodi rispetto a graph.json)
-      openNodeModal(d);
-    })
-    .call(d3.drag()
-      .on("start", dragstarted)
-      .on("drag", dragged)
-      .on("end", dragended));
+  // Creazione degli elementi grafici per i nodi (cerchi)
+  const node = gNodes.selectAll("circle")
+    .data(nodes, d => d.id)
+    .join("circle")
+      .attr("r", 5)
+      .attr("fill", nodeColor)
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 1.5)
+      .on("click", (ev, d) => {
+        // Gestione del click sui nodi: apre il modale solo per nodi
+        // effettivamente presenti nella simulazione (con simId valido)
+        if (d.simId === undefined) {
+          console.warn(
+            "Nodo grafico senza corrispondente nella simulazione",
+            d.id
+          );
+          return;
+        }
 
-  // Merge e applica attributi visivi
-  const allNodes = node.merge(newNodes)
-    .attr("r", d => Math.max(3, d.radius / 2))  // Scala il radius di graph.json
-    .attr("fill", nodeColor)
-    .attr("stroke", d => d.isEternalFC ? "#00d4ff" : "rgba(255, 255, 255, 0.8)")
-    .attr("stroke-width", d => d.isEternalFC ? 8 : 0.5)
-    .attr("opacity", 1);  // Tutti completamente visibili
+        console.log(
+          `Nodo selezionato: simId=${d.simId}, stato=${d.scientificState}`
+        );
 
-  // Tooltip con tipo di nodo
-  newNodes.append("title").text(d => `${d.type}\n${d.id}`);
+        openNodeModalBySimId(d.simId);
+      })
+      .call(d3.drag()
+        .on("start", dragstarted)
+        .on("drag", dragged)
+        .on("end", dragended));
 
-  // Set the position attributes of links and nodes each time the simulation ticks.
+  // Tooltip informativo per ciascun nodo
+  node.append("title")
+  .text(d => `ID: ${d.id}\nStato: ${d.scientificState}`);
+
+  // Callback eseguita ad ogni iterazione della simulazione fisica
+  // per aggiornare le posizioni degli elementi grafici
   simulation.on("tick", () => {
-    gLinks.selectAll("line")
+    link
         .attr("x1", d => d.source.x)
         .attr("y1", d => d.source.y)
         .attr("x2", d => d.target.x)
         .attr("y2", d => d.target.y);
 
-    gNodes.selectAll("circle")
+    node
         .attr("cx", d => d.x)
-        .attr("cy", d => d.y)
-        .attr("fill", nodeColor);
+        .attr("cy", d => d.y);
   });
-  
-  // Applica zoom iniziale fisso (0.8x) dopo che la simulazione converge
-  // Questo centra il grafo al caricamento
-  setTimeout(() => {
-    const initialZoom = d3.zoomIdentity.translate(width / 2, height / 2).scale(1.0);
-    svg.transition().duration(500).call(zoom.transform, initialZoom);
-  }, 1000);
 }
 
-// Funzioni drag per trascinare i nodi
+// =============================================================================
+// GESTORI DEGLI EVENTI DI TRASCINAMENTO (DRAG)
+// Implementano l'interazione utente per il riposizionamento manuale dei nodi.
+// =============================================================================
 function dragstarted(event) {
-  if (!event.active) simulation.alphaTarget(0.3).restart();
+  if (!event.active && simulation) simulation.alphaTarget(0.3).restart();
   event.subject.fx = event.subject.x;
   event.subject.fy = event.subject.y;
 }
@@ -540,12 +738,16 @@ function dragged(event) {
 }
 
 function dragended(event) {
-  if (!event.active) simulation.alphaTarget(0);
+  if (!event.active && simulation) simulation.alphaTarget(0);
   event.subject.fx = null;
   event.subject.fy = null;
 }
 
-// Pan & Zoom
+// =============================================================================
+// CONFIGURAZIONE PAN E ZOOM
+// Consente la navigazione interattiva del grafo mediante trascinamento
+// e rotella del mouse, con limiti di scala per preservare la leggibilita.
+// =============================================================================
 const zoom = d3.zoom()
   .scaleExtent([0.4, 3])
   .on("zoom", (ev)=> { root.attr("transform", ev.transform); });
@@ -553,14 +755,20 @@ svg.call(zoom);
 svg.on("dblclick.zoom", null);
 svg.on("dblclick", ()=> { svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity); });
 
-// resize reattivo
+// Gestione del ridimensionamento della finestra per layout responsivo
 window.addEventListener("resize", ()=> renderGraph());
 
-// ===== overlay =====
+// =============================================================================
+// GESTIONE OVERLAY DI AVVIO
+// =============================================================================
 function showOverlay(){ $("#startOverlay").style.display="flex"; }
 function hideOverlay(){ $("#startOverlay").style.display="none"; }
 
-// ===== simulazione =====
+// =============================================================================
+// FUNZIONI AUSILIARIE PER LA GESTIONE DELLA RETE
+// =============================================================================
+
+// Restituisce l'elenco dei nodi adiacenti a un dato nodo nella rete
 function neighborsOf(n){
   const ids=new Set();
   state.links.forEach(l=>{
@@ -585,230 +793,139 @@ function updateKPI(){
   $("#kNeutral").textContent=pct(c.neutral,tot)+"%";
 }
 
-function updateSegregationMetrics(){
-  if (!state.scientificModel.enabled) return;
-  
-  const metrics = state.scientificModel.segregationMetrics;
-  const interGroup = $("#metricsInterGroup");
-  const segratio = $("#metricsSegratio");
-  
-  if (interGroup) interGroup.textContent = `${metrics.interGroupEdges} / ${metrics.totalEdges}`;
-  if (segratio) segratio.textContent = (metrics.segregationRatio * 100).toFixed(1) + "%";
-  
-  // Calcola e mostra il threshold mean-field
-  const threshold = calculateMeanFieldThreshold();
-  const thresholdDisplay = $("#thresholdStatus");
-  
-  if (thresholdDisplay) {
-    const statusIcon = threshold.isSatisfied ? '✅' : '⚠️';
-    const statusColor = threshold.isSatisfied ? '#22c55e' : '#f97316';
-    thresholdDisplay.innerHTML = `
-      <div style="margin-top: 10px; padding: 8px; background: rgba(${threshold.isSatisfied ? '34, 197, 94' : '249, 115, 22'}, 0.1); 
-                  border-left: 3px solid ${statusColor}; border-radius: 3px;">
-        <small><strong>${statusIcon} ${threshold.status}</strong></small>
-        <div style="font-size: 0.8em; margin-top: 4px; color: #e5e7eb;">
-          <div>pf: ${threshold.currentPf.toFixed(3)}</div>
-          <div>Soglia: ${threshold.theoreticalThreshold.toFixed(3)}</div>
-        </div>
-      </div>
-    `;
-  }
-}
+// NOTA: calculateMeanFieldThreshold e updateSegregationMetrics sono state RIMOSSE
+// I parametri della simulazione sono gestiti interamente dall'API.
+// Non c'è più bisogno di calcoli locali - l'API decide tutto.
+
 
 // Esegue ESATTAMENTE un giorno (state.currentDay), poi imposta currentDay = prossimo giorno.
 // La label mostra l’ULTIMO giorno eseguito per chiarezza.
-function stepOneDay(){
-  if(state.currentDay>CONST.DAYS) return; // sicurezza
+async function stepOneDay(){
+  if(state.currentDay>CONST.DAYS) return;
 
   const day = state.currentDay;
   
-  // ===== 🔬 SCIENTIFIC MODEL (TUTTE LE MODALITÀ) =====
-  // Usa il modello scientifico compartimentale per tutte le modalità
-  if(state.scientificModel.enabled && state.scientificNodes && state.scientificNodes.length > 0){
-    // Applica modificatori temporanei dai boosts / campagne
-    const originalParams = { ...SCIENTIFIC_PARAMS };
-    const originalAlphas = state.scientificNodes.map(n=>n.alpha);
+  try {
+    // Invocazione dell'endpoint API per l'avanzamento temporale
+    const stepResult = await hoaxClient.step();
+    const newNodeStates = stepResult.new_node_states;
+    const simulationEnded = stepResult.simulation_ended || false;
 
-    // Boost: Truth Amp aumenta probabilità di verifica (pv)
-    if(state.game.boostMgr && state.game.boostMgr.isActive('truthAmp')){
-      const boost = state.game.boostMgr.boosts.truthAmp;
-      SCIENTIFIC_PARAMS.pv = Math.min(1, SCIENTIFIC_PARAMS.pv * (boost.multiplier || 1.5));
-    }
-    // Boost: Fake Virus aumenta beta
-    if(state.game.boostMgr && state.game.boostMgr.isActive('fakeVirus')){
-      const boost = state.game.boostMgr.boosts.fakeVirus;
-      SCIENTIFIC_PARAMS.beta = Math.min(1, SCIENTIFIC_PARAMS.beta * (boost.multiplier || 1.5));
-    }
-    // Campaign: riduce credibilità del fake nella community target (temporaneo)
-    if(state.game.campaign && state.game.campaign.active){
-      const alphaFactor = 1 - (((state.game.campaign.multiplier||1.2)-1) * 0.6);
-      state.scientificNodes.forEach(n=>{
-        if(state.game.campaign.targetCommunity === 'frontier'){
-          // frontiera: applichiamo su metà dei gullible per semplicità
-          if(n.community === 'gullible' && Math.random() < 0.5) n.alpha = n.alpha * alphaFactor;
-        } else if(n.community === state.game.campaign.targetCommunity){
-          n.alpha = n.alpha * alphaFactor;
-        }
-      });
+    // Gestione della condizione di equilibrio (terminazione anticipata)
+    if (simulationEnded) {
+      showToast('Simulazione terminata: equilibrio raggiunto');
+      console.log('Simulazione terminata al giorno', day);
     }
 
-    // Esegui un passo della simulazione scientifica
-    const result = simulateOneDay(state.scientificNodes, state.links);
-
-    // Se reverseTrend è attivo (battle) inverti B <-> F per aumentare impatto
-    if(state.game.boostMgr && state.game.boostMgr.isActive('reverseTrend')){
-      state.scientificNodes.forEach(n=>{ if(n.state==='B') n.state='F'; else if(n.state==='F') n.state='B'; });
-      // disattiva subito
-      state.game.boostMgr.deactivate('reverseTrend');
-    }
-
-    // Ripristina parametri e alpha originali
-    SCIENTIFIC_PARAMS.beta = originalParams.beta;
-    SCIENTIFIC_PARAMS.pv = originalParams.pv;
-    SCIENTIFIC_PARAMS.pf = originalParams.pf;
-    state.scientificNodes.forEach((n,i)=> n.alpha = originalAlphas[i]);
-
-    // Sincronizza gli stati scientifici nei nodi D3
-    state.nodes.forEach((d3Node, idx) => {
-      const scientificNode = state.scientificNodes[idx];
-      d3Node.scientificState = scientificNode.state;  // S, B, o F
+    // Sincronizzazione degli stati dei nodi tra API e rappresentazione locale
+    state.nodes.forEach(node => {
+      const newState = newNodeStates[String(node.id)] || 'S';
+      node.scientificState = newState;
       
-      // Mappa lo stato scientifico al formato legacy (per compatibilità KPI)
-      if (scientificNode.state === 'B') d3Node.memory = 'fake';
-      else if (scientificNode.state === 'F') d3Node.memory = 'truth';
-      else d3Node.memory = 'neutral';
+      // Sincronizzazione con i nodi della visualizzazione D3
+      const d3Node = currentNodes.find(n => n.id === node.id);
+      if (d3Node) {
+        d3Node.scientificState = newState;
+        d3Node.type = newState === 'B' ? 'Believer (Fake)' : 
+                      newState === 'FC' ? 'Fact-Checker (Verita)' : 
+                      'Susceptible (Neutrale)';
+      }
+      
+      // Mappatura dello stato alla memoria per retrocompatibilita
+      if (newState === 'B') node.memory = 'fake';
+      else if (newState === 'FC') node.memory = 'truth';
+      else node.memory = 'neutral';
     });
-    
-    // Sincronizza anche gameNodes (per graph.json)
-    if (state.gameNodes) {
-      state.gameNodes.forEach((node, idx) => {
-        if (state.scientificNodes[idx]) {
-          node.scientificState = state.scientificNodes[idx].state;  // S, B, o F
-        }
-      });
-    }
-    
-    // Calcola conteggi per il giorno
-    const c = {
-      fake: result.counts.B,
-      truth: result.counts.F,
-      neutral: result.counts.S
+
+    // Calcolo delle statistiche aggregate per il giorno corrente
+    const counts = {
+      fake: Object.values(newNodeStates).filter(s => s === 'B').length,
+      truth: Object.values(newNodeStates).filter(s => s === 'FC').length,
+      neutral: Object.values(newNodeStates).filter(s => s === 'S').length
     };
     
-    state.daily.push({day, fake:c.fake, truth:c.truth, neutral:c.neutral, event: ""});
-    
+    state.daily.push({day, fake:counts.fake, truth:counts.truth, neutral:counts.neutral, event: ""});
+
     // Decrementa giorni dei boosts/campaign attivi e pulisci
     state.game.boostMgr.tickDay();
     if(state.game.campaign && state.game.campaign.active){
       state.game.campaign.daysLeft -= 1;
       if(state.game.campaign.daysLeft <= 0) state.game.campaign.active = false;
     }
-    // reset battle usage per day
     state.game.battleWarsUsedToday = false;
+
+    // Aggiornamento degli indicatori chiave di performance (KPI)
+    updateKPI();
     
-  } else {
-    // ===== LEGACY MODEL (Fallback - se scientificNodes non disponibile) =====
-    const ev = applyEvent(day);
-    const srcW = ev ? (CONST.SOURCES[ev.source]||0.5) : 0, thr = CONST.NEIGHBOR_THR;
+    updateResultsChart(); 
+    renderDailyTable();
+    
+    // Aggiornamento dei colori del grafo in tempo reale
+    // Mappatura degli stati API agli elementi visuali D3 tramite identificatore
+    const stateMap = new Map(Object.entries(newNodeStates).map(([id, state]) => [parseInt(id), state]));
+    
+    gNodes.selectAll("circle")
+      .attr("fill", d => {
+        // Normalizzazione dell'identificatore (supporto per tipi string e int)
+        const nodeId = typeof d.id === 'string' ? parseInt(d.id) : d.id;
+        const newState = stateMap.get(nodeId);
+        if (newState) {
+          d.scientificState = newState;
+        }
+        return nodeColor(d);
+      });
+    
+    // Aggiornamento dei tooltip informativi
+    gNodes.selectAll("circle").select("title").remove();
+    gNodes.selectAll("circle").append("title").text(d => `${d.scientificState}\n${d.id}`);
 
-    state.nodes.forEach(n=>{
-      const neigh=neighborsOf(n), deg=Math.max(1,neigh.length);
-      const f=neigh.filter(v=>v.memory==="fake").length/deg;
-      const t=neigh.filter(v=>v.memory==="truth").length/deg;
-    // usa parametri configurabili: pesi neighbor / source / susceptibility
-    const neighborW = GAME_PARAMS.diffusion ?? 0.7;
-    const srcWeight = GAME_PARAMS.credibility ?? 0.2;
-    let suscWeight = 1 - neighborW - srcWeight; if(suscWeight < 0) suscWeight = 0.2;
+    // Modalita Strategica: calcolo del guadagno in crediti proporzionale alla verita
+    if(selectedMode === "Strategica" && day > 1){
+      const tot = state.nodes.length;
+      const truthPct = pct(counts.truth, tot);
+      const fakePct = pct(counts.fake, tot);
+      const coinsGained = 30 + Math.floor(truthPct * 0.7) - Math.floor(fakePct * 0.3);
+      state.game.coins += Math.max(5, coinsGained);
+      if(coinsGained > 0) showToast(`+${Math.max(5, coinsGained)} crediti (${truthPct}% Verita, ${fakePct}% Fake)`);
+      updateGameBaseUI();
+    }
+    
+    // Modalita Competitiva: turno dell'avversario AI dopo il giocatore
+    if(selectedMode === "Competitiva"){
+      makeAIMove();
+    }
 
-    const neighCompF = (f>thr?f:f*0.6) * neighborW;
-    const neighCompT = (t>thr?t:t*0.6) * neighborW;
-    const srcCompF = srcW * srcWeight;
-    const srcCompT = srcW * srcWeight;
-    const suscCompF = n.susceptibility * suscWeight;
-    const suscCompT = (1 - n.susceptibility) * suscWeight;
+    // Visualizzazione dell'ultimo giorno simulato
+    $("#dayLabel").textContent = day;
 
-    const pF = neighCompF + srcCompF + suscCompF;
-    const pT = neighCompT + srcCompT + suscCompT;
+    // Preparazione per il giorno successivo
+    state.currentDay = day + 1;
+    state.game.totalDaysPlayed = day;
+    
+    // Ripristino delle mosse disponibili per il nuovo giorno (solo Strategica)
+    if(selectedMode === "Strategica"){
+      state.game.movesLeft = state.game.movesPerDay;
+      updateGameBaseUI();
+    }
+    
+    // Verifica delle condizioni di terminazione della partita
+    if(day >= CONST.DAYS){
+      checkGameEnd();
+    }
 
-    // fact_checkers più efficaci in base alla probabilità di verifica
-    const fcEff = 0.8 + ((GAME_PARAMS.verify||0) * 0.2);
-    if(n.role==="fact_checker"){ if(Math.random()<pT*fcEff) n.memory="truth"; else if(Math.random()<pF*0.15) n.memory="fake"; }
-      else if(n.role==="credulone"){ if(Math.random()<pF) n.memory="fake"; else if(Math.random()<pT*0.45) n.memory="truth"; }
-      else { if(Math.random()<pF*0.7) n.memory="fake"; else if(Math.random()<pT*0.7) n.memory="truth"; }
+    TROPHY_SYSTEM.checkUnlocks();
 
-      n.memoryTime = (n.memory==="neutral")?0:(n.memoryTime+1);
-      if(n.memoryTime>=CONST.FORGET_DAYS){ n.memory="neutral"; n.memoryTime=0; }
-    });
-
-    const c = computeCounts();
-    state.daily.push({day, fake:c.fake, truth:c.truth, neutral:c.neutral, event: ev?`${ev.type} da ${ev.source}`:""});
-  }
-
-  // Sincronizza graph.json nodes con lo scientificState aggiornato
-  if (gNodes && state.nodes && state.nodes.length > 0) {
-    gNodes.selectAll("circle").data().forEach((d, idx) => {
-      // Mappa ciclica da game nodes a graph.json nodes
-      const gameNodeIdx = idx % state.nodes.length;
-      d.scientificState = state.nodes[gameNodeIdx].scientificState || 'S';
-      d.isEternalFC = state.nodes[gameNodeIdx].isEternalFC || false;
-    });
-  }
-
-  // Aggiorna immediatamente colori e tooltip dopo lo step
-  gNodes.selectAll("circle")
-    .attr("fill", nodeColor)  // Usa nodeColor() che supporta scientificState
-    .attr("stroke", d => d.isEternalFC ? "#00d4ff" : "rgba(255, 255, 255, 0.8)")
-    .selectAll("title").remove();
-  gNodes.selectAll("circle").append("title").text(d=>`[${d.type}] #${d.id}`);
-
-  // Assicurati che c sia definito (potrebbe non esserlo dal ramo scientific model)
-  let displayCounts = computeCounts();
-  updateKPI();
-  updateSegregationMetrics();
-  updateResultsChart(); 
-  renderDailyTable();
-
-  // Modalità Strategica: guadagna monete in base alla percentuale di Verità (non il giorno 1)
-  if(selectedMode === "Strategica" && day > 1){
-    const truthPct = pct(displayCounts.truth, state.nodes.length);
-    const fakePct = pct(displayCounts.fake, state.nodes.length);
-    // Formula bilanciata: base 30 + bonus verità (fino a 70) - penalità fake (fino a 30)
-    const coinsGained = 30 + Math.floor(truthPct * 0.7) - Math.floor(fakePct * 0.3);
-    state.game.coins += Math.max(5, coinsGained); // Minimo 5 crediti
-    if(coinsGained > 0) showToast(`+${Math.max(5, coinsGained)} crediti (${truthPct}% Verità, ${fakePct}% Fake)`);
-    updateGameBaseUI();
-  }
-  
-  // Modalità Competitiva: la CPU gioca dopo il giocatore
-  if(selectedMode === "Competitiva"){
-    makeAIMove();
-  }
-
-  // mostra l'ultimo giorno eseguito
-  $("#dayLabel").textContent = day;
-
-  // Aggiorna il grafico in tempo reale (se il grafico è stato aperto)
-  if(state.chart) {
-    updateResultsChart();
-  }
-
-  // PREPARA il prossimo giorno
-  state.currentDay = day + 1;
-  state.game.totalDaysPlayed = day;
-  
-  // Reset mosse per il nuovo giorno (solo per Strategica)
-  if(selectedMode === "Strategica"){
-    state.game.movesLeft = state.game.movesPerDay; // 3 mosse al prossimo giorno
-    updateGameBaseUI();
-  }
-  
-  // Controlla se la partita è finita (giorno 7 o oltre in Competitiva)
-  if(day >= CONST.DAYS){
-    checkGameEnd();
+  } catch (error) {
+    console.error('Errore stepOneDay:', error);
+    showToast(`Errore simulazione: ${error.message}`);
   }
 }
 
-// ===== risultati (modali) =====
+// =============================================================================
+// GESTIONE DEI RISULTATI E GRAFICI STATISTICI
+// Funzioni per la visualizzazione dell'andamento temporale della simulazione
+// mediante grafici interattivi (Chart.js) e tabelle riepilogative.
+// =============================================================================
 function updateResultsChart(reset=false){
   const labels=state.daily.map(d=>`G${d.day}`), tot=state.nodes.length||1;
   const F=state.daily.map(d=>pct(d.fake,tot)), T=state.daily.map(d=>pct(d.truth,tot)), N=state.daily.map(d=>pct(d.neutral,tot));
@@ -829,7 +946,11 @@ function renderDailyTable(){
   tb.innerHTML=""; state.daily.forEach(d=>{const tr=document.createElement("tr");tr.innerHTML=`<td>${d.day}</td><td>${d.fake}</td><td>${d.truth}</td><td>${d.neutral}</td><td>${d.event||""}</td>`;tb.appendChild(tr);});
 }
 
-// ===== modali generali =====
+// =============================================================================
+// GESTIONE DELLE FINESTRE MODALI
+// Funzioni per l'apertura e la chiusura delle finestre di dialogo,
+// con gestione dell'accessibilita (attributi ARIA).
+// =============================================================================
 function openModal(id){ const m=$(id); m.classList.add("show"); m.setAttribute("aria-hidden","false"); }
 function closeModal(id){ 
   const m=$(id); 
@@ -844,7 +965,11 @@ const resultsClose = $("#resultsClose"); if(resultsClose) resultsClose.onclick  
 const btnOpenDetails = $("#btnOpenDetails"); if(btnOpenDetails) btnOpenDetails.onclick = ()=>{ renderDailyTable(); openModal("#detailsModal"); };
 const detailsClose = $("#detailsClose"); if(detailsClose) detailsClose.onclick   = ()=> closeModal("#detailsModal");
 
-// ===== ACHIEVEMENTS MODALE =====
+// =============================================================================
+// RENDERING DEL MODALE DEGLI ACHIEVEMENT
+// Genera dinamicamente la griglia dei trofei con indicazione visiva
+// dello stato di sblocco e della categoria di appartenenza.
+// =============================================================================
 function renderAchievementsModal(){
   const content = $("#achievementsContent");
   if(!content) return;
@@ -876,18 +1001,25 @@ if(btnAchievements) btnAchievements.onclick = ()=>{
   openModal("#achievementsModal");
 };
 
-// Close achievements modal con click su sfondo
+// Chiusura del modale degli achievement mediante click sullo sfondo
 const achievementsModal = $("#achievementsModal");
 if(achievementsModal) achievementsModal.onclick = (e) => {
   if(e.target === achievementsModal) closeModal("#achievementsModal");
 };
 
-// ===== toast =====
+// =============================================================================
+// SISTEMA DI NOTIFICHE (TOAST)
+// Visualizza messaggi temporanei non intrusivi per feedback all'utente.
+// =============================================================================
 function showToast(msg="Sessione salvata"){
   const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=> t.classList.remove("show"), 1600);
 }
 
-// ===== salva/carica =====
+// =============================================================================
+// PERSISTENZA DELLE SESSIONI
+// Funzioni per il salvataggio e il caricamento dello stato della simulazione
+// mediante localStorage del browser. Consente di riprendere sessioni precedenti.
+// =============================================================================
 function snapshot(){
   return {
     id:`S${Date.now()}`, when:new Date().toLocaleString(), currentDay:state.currentDay,
@@ -929,11 +1061,30 @@ function loadSnapshot(s){
   gNodes.selectAll("circle").attr("fill", colorFill).attr("stroke", colorStroke);
 }
 
-// ===== modale nodo (refresh immediato) =====
+// =============================================================================
+// MODALE DI DETTAGLIO DEL NODO
+// Consente la visualizzazione e la modifica delle proprieta di un singolo nodo,
+// incluso lo stato epidemiologico, il ruolo nella rete e la suscettibilita.
+// =============================================================================
 let modalNode=null;
 let selectingEternalFC = false;
 
+// Funzione di collegamento tra identificatore grafico e identificatore simulazione
+function openNodeModalBySimId(simId){
+  const node = state.nodes.find(n => n.id === simId);
+  if (!node) {
+    console.warn('Nodo simulazione non trovato:', simId);
+    return;
+  }
+  openNodeModal(node);
+}
+
 function openNodeModal(node){
+  if (node.susceptibility === undefined) {
+    console.warn('Nodo non simulativo, modal bloccato:', node);
+    return;
+  }
+
   // Se siamo in modalità selezione Eternal FC
   if(selectingEternalFC){
     selectingEternalFC = false;
@@ -944,15 +1095,13 @@ function openNodeModal(node){
     }
     node.role = 'fact_checker';
     node.isEternalFC = true;
+    node.scientificState = 'FC';  // Aggiornamento dello stato epidemiologico
+    node.memory = 'truth';
     
-    // Se stiamo usando il modello scientifico, marca il nodo come eternal FC
-    if(state.scientificModel.enabled && state.scientificNodes){
-      const scientificNode = state.scientificNodes.find(n => n.nodeId === node.id);
-      if(scientificNode){
-        scientificNode.isEternalFC = true;
-        scientificNode.pf_override = 0;  // Non dimentica mai (F→S non avviene mai)
-      }
-    }
+    // NOTA TECNICA: Il concetto di "Eternal Fact-Checker" e una astrazione
+    // dell'interfaccia utente. L'API backend non supporta nativamente nodi
+    // immuni alla transizione di stato. La proprieta isEternalFC viene
+    // utilizzata esclusivamente per la differenziazione visiva.
     
     state.game.coins -= 40;
     // Decrementa mosse solo in Strategica
@@ -972,7 +1121,8 @@ function openNodeModal(node){
     // Refresh grafico con nuovo nodeColor
     gNodes.selectAll('circle').attr('stroke', d => d.isEternalFC ? "#00d4ff" : "rgba(255, 255, 255, 0.8)").attr('fill', nodeColor).selectAll("title").remove();
     gNodes.selectAll('circle').append("title").text(d=>`[${d.type}] #${d.id}`);
-    showToast('Eternal Fact-checker posizionato (40 crediti)');
+    showToast('Eternal Fact-checker posizionato (40 crediti)')
+  syncStateToServer();;
     return;
   }
   
@@ -1021,18 +1171,29 @@ $("#nodeApply").onclick=()=>{
   closeNode();
 };
 
-// ===== overlay/start & controlli header =====
-// btnStart rimosso dall'HTML; now initializeGame() gestisce l'auto-inizializzazione
+// =============================================================================
+// GESTORI DEI CONTROLLI PRINCIPALI DELL'INTERFACCIA
+// Binding degli eventi per i pulsanti di navigazione temporale,
+// reset della simulazione ed esportazione dei dati.
+// =============================================================================
 
-$("#btnNext").addEventListener("click", ()=>{
-  if(state.currentDay <= CONST.DAYS) stepOneDay();
+$("#btnNext").addEventListener("click", async ()=>{
+  if(state.currentDay <= CONST.DAYS) await stepOneDay();
 });
 $("#btnRunAll").addEventListener("click", async ()=>{
   while(state.currentDay <= CONST.DAYS){
-    stepOneDay();
+    await stepOneDay();
     await new Promise(r=> setTimeout(r, 180));
   }
 });
+
+// Pulsante di sincronizzazione manuale con il server
+// Utile per allineare lo stato dopo operazioni eseguite via API esterna
+$("#btnRefresh")?.addEventListener("click", async () => {
+  await refreshStateFromServer();
+});
+
+// Ripristino completo dello stato dell'applicazione
 $("#btnReset").addEventListener("click", ()=>{
   state.currentDay=1; state.daily=[];
   $("#dayLabel").textContent=0;
@@ -1040,11 +1201,11 @@ $("#btnReset").addEventListener("click", ()=>{
   gLinks.selectAll("*").remove(); gNodes.selectAll("*").remove();
   if(state.chart){ state.chart.destroy(); state.chart=null; }
   
-  // Riabilita il bottone modalità per nuova partita
+  // Riabilitazione della selezione modalita per una nuova partita
   const btnMode = $("#btnMode");
   if(btnMode) btnMode.disabled = false;
   
-  // Reset monete e stato game
+  // Ripristino delle risorse di gioco
   state.game.coins = 400;
   state.game.movesLeft = 3;
   state.game.strategies = { hubs: false, frontiere: false, random: false };
@@ -1052,10 +1213,12 @@ $("#btnReset").addEventListener("click", ()=>{
   selectedMode = null;
   
   updateGameBaseUI();
-  showToast('Partita reimpostata - Seleziona una modalità');
+  showToast('Partita reimpostata - Seleziona una modalita');
 });
+
+// Esportazione dello stato corrente in formato JSON
 $("#btnExportJson").addEventListener("click", ()=>{
-  // Create graph.json in-memory with game nodes
+  // Costruzione della struttura dati conforme allo schema graph.json
   const graphJsonContent={
     nodes:state.nodes.map(d=>({
       id:d.id,
@@ -1075,7 +1238,7 @@ $("#btnExportJson").addEventListener("click", ()=>{
     }))
   };
   
-  // Update graphData in memory
+  // Aggiornamento della cache del grafo in memoria
   graphData=graphJsonContent;
   
   // Export session JSON
@@ -1092,6 +1255,8 @@ $("#btnExportJson").addEventListener("click", ()=>{
   const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"})); const a=document.createElement("a");
   a.href=url; a.download=`giancarlo_ruffo_${Date.now()}.json`; a.click(); URL.revokeObjectURL(url);
 });
+
+// Esportazione del grafico statistico in formato immagine PNG
 $("#btnExportPng").addEventListener("click", ()=>{
   const canvas=$("#summaryChart");
   if(!canvas){ updateResultsChart(true); openModal("#resultsModal"); return; }
@@ -1102,18 +1267,22 @@ $("#btnSave").addEventListener("click", saveSession);
 $("#btnLoad").addEventListener("click", openLoadModal);
 $("#loadClose").addEventListener("click", ()=> closeModal("#loadModal"));
 
-// ===== Gestione selezione team (Competitiva) =====
+// =============================================================================
+// GESTIONE DELLA SELEZIONE DEL TEAM (MODALITA COMPETITIVA)
+// Consente al giocatore di scegliere la fazione da rappresentare:
+// Team Fake (diffusione disinformazione) o Team Verita (fact-checking).
+// =============================================================================
 const teamFakeBtn = $("#teamFake");
 const teamTruthBtn = $("#teamTruth");
 const teamCancelBtn = $("#teamCancel");
 
 if(teamFakeBtn) teamFakeBtn.addEventListener("click", ()=>{
-  // Salva team choice in tutte le modalità
+  // Registrazione della scelta del team nel sistema di stato
   state.game.competitive.playerTeam = "fake";
-  state.game.playerTeam = "fake"; // Salva anche in game generale
+  state.game.playerTeam = "fake";
   closeModal("#teamModal");
   
-  // Initialize game: prepara il grafo solo alla prima volta
+  // Inizializzazione del grafo solo al primo avvio della partita
   if(state.currentDay === 1 && state.nodes.length === 0) {
     initializeGame();
   }
@@ -1124,12 +1293,12 @@ if(teamFakeBtn) teamFakeBtn.addEventListener("click", ()=>{
 });
 
 if(teamTruthBtn) teamTruthBtn.addEventListener("click", ()=>{
-  // Salva team choice in tutte le modalità
+  // Registrazione della scelta del team nel sistema di stato
   state.game.competitive.playerTeam = "truth";
-  state.game.playerTeam = "truth"; // Salva anche in game generale
+  state.game.playerTeam = "truth";
   closeModal("#teamModal");
   
-  // Initialize game: prepara il grafo solo alla prima volta
+  // Inizializzazione del grafo solo al primo avvio della partita
   if(state.currentDay === 1 && state.nodes.length === 0) {
     initializeGame();
   }
@@ -1143,18 +1312,24 @@ if(teamCancelBtn) teamCancelBtn.addEventListener("click", ()=>{
   closeModal("#teamModal");
 });
 
-// Bottone "Nuovo gioco" dal modale vincitore
+// Gestione del pulsante "Nuova partita" nel modale di fine gioco
 const winnerCloseBtn = $("#winnerClose");
 if(winnerCloseBtn) winnerCloseBtn.addEventListener("click", ()=>{
   closeModal("#winnerModal");
-  // Reset completo
+  // Ripristino completo dello stato
   $("#btnReset").click();
 });
 
-// ===== Gestione modalità =====
+// =============================================================================
+// GESTIONE DELLE MODALITA DI GIOCO
+// Il sistema supporta tre modalita distinte:
+// - Libera: sperimentazione senza vincoli
+// - Strategica: risorse limitate e obiettivi specifici
+// - Competitiva: confronto diretto contro avversario AI
+// =============================================================================
 let selectedMode = null;
 
-// Initialize game: prepara il grafo quando inizia la partita (dopo selezione team)
+// Inizializzazione dello stato di gioco dopo la selezione del team
 function initializeGame(){
   state.currentDay = 1;
   state.daily = [];
@@ -1162,17 +1337,22 @@ function initializeGame(){
   gLinks.selectAll("*").remove();
   gNodes.selectAll("*").remove();
   
-  // 🔬 SEMPRE usa il modello scientifico (tutte le modalità)
-  const useScientific = typeof SCIENTIFIC_PARAMS !== 'undefined';
-  buildGraph(120, useScientific);
+  //usa il modello scientifico tramite API
+  const useScientific = true;  // L'API gestisce tutto
+  buildGraph(336, useScientific);
   
   renderGraph();
   updateKPI();
-  updateSegregationMetrics();
+  
   renderAchievementsUI();
 }
 
-// Controlla se il gioco è finito e mostra il vincitore
+// =============================================================================
+// VERIFICA DELLE CONDIZIONI DI TERMINAZIONE
+// Determina il vincitore in base alle percentuali finali di Believer e
+// Fact-Checker. In caso di pareggio nella modalita competitiva,
+// viene attivato un prolungamento della partita.
+// =============================================================================
 function checkGameEnd(){
   const lastDaily = state.daily[state.daily.length - 1];
   if(!lastDaily) return;
@@ -1200,6 +1380,12 @@ function checkGameEnd(){
   }
 }
 
+// =============================================================================
+// CONFIGURAZIONE DELLE MODALITA DI GIOCO
+// Definisce i parametri di default per ciascuna modalita.
+// NOTA: Questi valori sono solo riferimenti locali; i parametri effettivi
+// della simulazione sono determinati dall'API backend.
+// =============================================================================
 const MODALITY_CONFIG = {
   Strategica: {
     params: { diffusion: 0.7, credibility: 0.2, forgetting: 0.5, verify: 0.4 }
@@ -1212,6 +1398,7 @@ const MODALITY_CONFIG = {
   },
 };
 
+// Applica la configurazione della modalita selezionata e inizializza il gioco
 function setMode(mode) {
   const cfg = MODALITY_CONFIG[mode];
   if (!cfg) return;
@@ -1219,7 +1406,7 @@ function setMode(mode) {
   selectedMode = mode;
   TROPHY_SYSTEM.stats.modesPlayed.add(mode);
   
-  // Aggiorna il Game Base in base alla modalità
+  // Configurazione dell'interfaccia in base alla modalita selezionata
   updateGameBaseForMode(mode);
 
   // Aggiorna el currentMode nella topbar
@@ -1233,24 +1420,34 @@ function setMode(mode) {
   showToast(`Modalità selezionata: ${mode}`);
   closeModal("#modeModal");
   
-  // Auto-init: mostra selezione team per iniziare il gioco
+  // Ricaricamento del grafo con i parametri corrispondenti alla modalita
+  console.log(`Ricaricamento grafo per modalita: ${mode}`);
+  buildGraph(336, true).then(() => {
+    console.log(`Grafo ricaricato con parametri modalita ${mode}`);
+  });
+  
+  // Visualizzazione automatica del modale di selezione team
   setTimeout(() => {
     openModal("#teamModal");
   }, 300);
 }
 
-// Mostra/nasconde le sezioni del Game Base in base alla modalità
+// =============================================================================
+// CONFIGURAZIONE DELL'INTERFACCIA PER MODALITA
+// Adatta la visibilita delle sezioni dell'interfaccia utente in base
+// alla modalita di gioco selezionata, mostrando solo i controlli pertinenti.
+// =============================================================================
 function updateGameBaseForMode(mode){
   const gbSelectMode = $("#gb-select-mode");
   const gbContent = $("#gb-content");
   
   if(!gbSelectMode || !gbContent) return;
 
-  // Nascondi messaggio iniziale, mostra contenuto
+  // Transizione dalla schermata di selezione al contenuto effettivo
   gbSelectMode.style.display = "none";
   gbContent.style.display = "block";
 
-  // Nascondi tutto
+  // Ripristino della visibilita di tutte le sezioni
   const sections = ["gb-strategies", "gb-competitive", "gb-free"];
   const hrs = ["hr-strategies", "hr-competitive", "hr-free"];
   sections.forEach(s => { const el = $("#"+s); if(el) el.style.display="none"; });
@@ -1260,15 +1457,15 @@ function updateGameBaseForMode(mode){
   if(mode === "Strategica"){
     $("#hr-strategies").style.display="block";
     $("#gb-strategies").style.display="block";
-    // Mostra sezioni aggiuntive Strategica
+    // Attivazione dei pannelli specifici della modalita strategica
     $("#hr-boosts").style.display="block";
     $("#gb-boosts").style.display="block";
     $("#hr-targeted").style.display="block";
     $("#gb-targeted").style.display="block";
     $("#hr-predictive").style.display="block";
     $("#gb-predictive").style.display="block";
-    // ✅ Rimosso achievements dalla game base (ora in modale separata)
-    // Imposta parametri fissi
+    // Gli achievement sono visualizzati in un modale dedicato
+    // Inizializzazione dei parametri di gioco per la modalita strategica
     GAME_PARAMS.diffusion = 0.7;
     GAME_PARAMS.credibility = 0.2;
     GAME_PARAMS.forgetting = 0.5;
@@ -1281,21 +1478,21 @@ function updateGameBaseForMode(mode){
   }else if(mode === "Competitiva"){
     $("#hr-competitive").style.display="block";
     $("#gb-competitive").style.display="block";
-    // mostra azioni Broadcast Wars
+    // Attivazione del pannello delle azioni competitive (Broadcast Wars)
     const bw = $("#broadcast-wars"); if(bw) bw.style.display = '';
-    // Imposta parametri fissi
+    // Inizializzazione dei parametri per la modalita competitiva
     GAME_PARAMS.diffusion = 0.7;
     GAME_PARAMS.credibility = 0.2;
     GAME_PARAMS.forgetting = 0.5;
     GAME_PARAMS.verify = 0.4;
     CONST.FORGET_DAYS = Math.max(1, Math.round(GAME_PARAMS.forgetting * CONST.DAYS));
-    // Crea CPU opponent con difficoltà selezionata
+    // Istanziazione dell'avversario AI con il livello di difficolta selezionato
     const difficulty = $("#difficulty") ? $("#difficulty").value : 'expert';
     state.game.cpuOpponent = new CPUOpponent(difficulty);
     state.game.coins = 400;
     state.game.movesPerDay = 3;
     state.game.movesLeft = 0;
-    // Mostra riepilogo mosse competitive
+    // Visualizzazione del contatore delle mosse disponibili
     const cm = $("#compMoves"); if(cm) cm.textContent = `${state.game.movesPerDay} mosse/giorno`;
     updateCPUStats();
     updateGameBaseUI();
@@ -1304,21 +1501,20 @@ function updateGameBaseForMode(mode){
     $("#hr-free").style.display="block";
     $("#gb-free").style.display="block";
     
-    // Carica i valori attuali dei parametri scientifici nei campi
-    const pAlpha = $("#paramAlpha"); if(pAlpha) pAlpha.value = SCIENTIFIC_PARAMS.alpha;
-    const pBeta = $("#paramBeta"); if(pBeta) pBeta.value = SCIENTIFIC_PARAMS.beta;
-    const pPf = $("#paramPf"); if(pPf) pPf.value = SCIENTIFIC_PARAMS.pf;
-    const pPv = $("#paramPv"); if(pPv) pPv.value = SCIENTIFIC_PARAMS.pv;
-    const pRho = $("#paramRho"); if(pRho) pRho.value = SCIENTIFIC_PARAMS.rho;
-    const pGamma = $("#paramGamma"); if(pGamma) pGamma.value = SCIENTIFIC_PARAMS.gamma;
-    const pAG = $("#paramAlphaGullible"); if(pAG) pAG.value = SCIENTIFIC_PARAMS.alpha_gullible;
-    const pAS = $("#paramAlphaSkeptic"); if(pAS) pAS.value = SCIENTIFIC_PARAMS.alpha_skeptic;
+    // NOTA ARCHITETTURALE: In questa modalita i campi input dell'interfaccia
+    // sono puramente informativi. I parametri effettivi del modello
+    // epidemiologico sono definiti e gestiti esclusivamente dall'API backend.
+    showToast('Modalita Libera: parametri gestiti dall\'API');
     
     updateGameBaseUI();
   }
 }
 
-// ===== Game state (coins, strategies, modalità) =====
+// =============================================================================
+// STATO DEL SISTEMA DI GIOCO
+// Struttura dati che mantiene le risorse del giocatore (crediti),
+// le strategie attivate, i potenziamenti e lo stato dell'avversario AI.
+// =============================================================================
 state.game = {
   coins: 400,
   movesPerDay: 3,
@@ -1357,6 +1553,11 @@ function updateGameBaseUI(){
   if(pDiff && pCred && pFor && pVer){ pDiff.value = GAME_PARAMS.diffusion; pCred.value = GAME_PARAMS.credibility; pFor.value = GAME_PARAMS.forgetting; pVer.value = GAME_PARAMS.verify; }
 }
 
+// =============================================================================
+// ACQUISTO E APPLICAZIONE DELLE STRATEGIE DI IMMUNIZZAZIONE
+// Le strategie consentono di posizionare Fact-Checker in posizioni
+// strategiche della rete secondo diversi criteri topologici.
+// =============================================================================
 function buyStrategy(name, cost){
   if(!state.nodes || state.nodes.length === 0) return showToast('Premi START per generare il grafo prima');
   if(state.game.coins < cost) return showToast('Monete insufficienti');
@@ -1365,7 +1566,7 @@ function buyStrategy(name, cost){
   state.game.coins -= cost; 
   state.game.strategies[name]=true; 
   
-  // Decrementa mosse solo in Strategica
+  // Nella modalita strategica, ogni azione consuma una mossa giornaliera
   if(selectedMode === "Strategica"){
     state.game.movesLeft--;
   }
@@ -1373,13 +1574,15 @@ function buyStrategy(name, cost){
   updateGameBaseUI();
   showToast(`Strategia ${name} acquistata`);
   
-  // Assegna 8 fact-checker in base alla strategia
+  // Applicazione della strategia: posizionamento di 16 Fact-Checker
   applyStrategy(name);
 }
 
+// Implementazione delle strategie di posizionamento dei Fact-Checker
 function applyStrategy(strategyName){
   if(strategyName === "hubs"){
-    // Hubs: seleziona nodi con grado più alto
+    // Strategia Hub: selezione dei nodi con il grado (numero di connessioni) piu elevato
+    // Questi nodi hanno maggiore influenza nella propagazione dell'informazione
     const degrees = state.nodes.map(n => ({
       node: n,
       degree: state.links.filter(l => {
@@ -1389,25 +1592,20 @@ function applyStrategy(strategyName){
       }).length
     }));
     degrees.sort((a, b) => b.degree - a.degree);
-    // Assegna i primi 16 come fact-checker
+    // Conversione dei 16 nodi piu connessi in Fact-Checker
     for(let i = 0; i < Math.min(16, degrees.length); i++){
       if(degrees[i].node.role !== "fact_checker") {
         degrees[i].node.role = "fact_checker";
         degrees[i].node.isEternalFC = true;
-        
-        // Se modello scientifico, setta pf_override=0
-        if(state.scientificModel.enabled && state.scientificNodes){
-          const scientificNode = state.scientificNodes.find(n => n.nodeId === degrees[i].node.id);
-          if(scientificNode){
-            scientificNode.isEternalFC = true;
-            scientificNode.pf_override = 0;
-          }
-        }
+        degrees[i].node.scientificState = 'FC';
+        degrees[i].node.memory = 'truth';
+        // NOTA: Questo aggiornamento e puramente visivo; la simulazione backend
+        // non viene modificata direttamente da questa operazione
       }
     }
   }else if(strategyName === "frontiere"){
-    // Frontiere: seleziona nodi bridge (ponte tra cluster)
-    // Semplificato: nodi con connessioni diverse
+    // Strategia Frontiera: selezione dei nodi ponte tra comunita diverse
+    // Implementazione semplificata basata sull'eterogeneita dei vicini
     const candidates = state.nodes.filter(n => {
       const neighbors = neighborsOf(n);
       if(neighbors.length === 0) return false;
@@ -1418,42 +1616,36 @@ function applyStrategy(strategyName){
       if(n.role !== "fact_checker") {
         n.role = "fact_checker";
         n.isEternalFC = true;
-        
-        // Se modello scientifico, setta pf_override=0
-        if(state.scientificModel.enabled && state.scientificNodes){
-          const scientificNode = state.scientificNodes.find(sn => sn.nodeId === n.id);
-          if(scientificNode){
-            scientificNode.isEternalFC = true;
-            scientificNode.pf_override = 0;
-          }
-        }
+        n.scientificState = 'FC';
+        n.memory = 'truth';
+        // NOTA: La simulazione è gestita dall'API - questo cambia solo la visualizzazione
       }
     });
   }else if(strategyName === "random"){
-    // Random: seleziona 16 nodi casuali
+    // Strategia Random: selezione casuale uniforme di 16 nodi
+    // Questa strategia serve come baseline per il confronto con strategie mirate
     const shuffled = [...state.nodes].sort(() => Math.random() - 0.5);
     for(let i = 0; i < Math.min(16, shuffled.length); i++){
       if(shuffled[i].role !== "fact_checker") {
         shuffled[i].role = "fact_checker";
         shuffled[i].isEternalFC = true;
-        
-        // Se modello scientifico, setta pf_override=0
-        if(state.scientificModel.enabled && state.scientificNodes){
-          const scientificNode = state.scientificNodes.find(n => n.nodeId === shuffled[i].id);
-          if(scientificNode){
-            scientificNode.isEternalFC = true;
-            scientificNode.pf_override = 0;
-          }
-        }
+        shuffled[i].scientificState = 'FC';
+        shuffled[i].memory = 'truth';
+        // NOTA: La simulazione è gestita dall'API - questo cambia solo la visualizzazione
       }
     }
   }
   
-  // Refresh grafico
+  // Aggiornamento della visualizzazione con i nuovi stati
   gNodes.selectAll('circle').attr('stroke', colorStroke).attr('fill', colorFill);
   showToast(`16 Fact-checker assegnati (${strategyName})`);
 }
 
+// =============================================================================
+// AGGIUNTA MANUALE DI UN FACT-CHECKER PERMANENTE
+// Consente al giocatore di selezionare interattivamente un nodo specifico
+// da convertire in Fact-Checker con immunita visiva (bordo evidenziato).
+// =============================================================================
 function addEternalFactChecker(){
   if(!state.nodes || state.nodes.length === 0) return showToast('Premi START per generare il grafo prima');
   if(selectedMode === "Strategica" && state.game.movesLeft <= 0) return showToast('Non hai più mosse per oggi!');
@@ -1464,6 +1656,7 @@ function addEternalFactChecker(){
   showToast('Clicca su un nodo per posizionare l\'Eternal Fact-Checker');
 }
 
+// Inizializzazione dei gestori eventi per i controlli dell'interfaccia di gioco
 function initGameBaseHandlers(){
   const bH = $("#btnHubs"), bF=$("#btnFrontiere"), bR=$("#btnRandom");
   if(bH) bH.addEventListener('click', ()=> buyStrategy('hubs',500));
@@ -1472,48 +1665,19 @@ function initGameBaseHandlers(){
 
   const btnAddFC = $("#btnAddEternal"); if(btnAddFC) btnAddFC.addEventListener('click', ()=> addEternalFactChecker());
 
-  // Legacy params change (Libera modalità)
-  const pDiff = $("#paramDiffusion"); if(pDiff) pDiff.addEventListener('change', ()=> { GAME_PARAMS.diffusion = parseFloat(pDiff.value); });
-  const pCred = $("#paramCredibility"); if(pCred) pCred.addEventListener('change', ()=> { GAME_PARAMS.credibility = parseFloat(pCred.value); });
-  const pFor = $("#paramForgetting"); if(pFor) pFor.addEventListener('change', ()=> { GAME_PARAMS.forgetting = parseFloat(pFor.value); CONST.FORGET_DAYS = Math.max(1, Math.round(GAME_PARAMS.forgetting * CONST.DAYS)); });
-  const pVer = $("#paramVerify"); if(pVer) pVer.addEventListener('change', ()=> { GAME_PARAMS.verify = parseFloat(pVer.value); });
-
-  // SCIENTIFIC PARAMS (Libera modalità - modello Tambuscio & Ruffo)
-  const pAlpha = $("#paramAlpha"); if(pAlpha) pAlpha.addEventListener('change', ()=> { 
-    SCIENTIFIC_PARAMS.alpha = parseFloat(pAlpha.value);
-    updateSegregationMetrics();  // Aggiorna threshold
-  });
-  const pBeta = $("#paramBeta"); if(pBeta) pBeta.addEventListener('change', ()=> { 
-    SCIENTIFIC_PARAMS.beta = parseFloat(pBeta.value);
-    updateSegregationMetrics();  // Aggiorna threshold
-  });
-  const pPf = $("#paramPf"); if(pPf) pPf.addEventListener('change', ()=> { 
-    SCIENTIFIC_PARAMS.pf = parseFloat(pPf.value);
-    updateSegregationMetrics();  // Aggiorna threshold
-  });
-  const pPv = $("#paramPv"); if(pPv) pPv.addEventListener('change', ()=> { 
-    SCIENTIFIC_PARAMS.pv = parseFloat(pPv.value);
-    updateSegregationMetrics();  // Aggiorna threshold
-  });
-  
-  // Segregation params
-  const pRho = $("#paramRho"); if(pRho) pRho.addEventListener('change', ()=> { SCIENTIFIC_PARAMS.rho = parseFloat(pRho.value); });
-  const pGamma = $("#paramGamma"); if(pGamma) pGamma.addEventListener('change', ()=> { SCIENTIFIC_PARAMS.gamma = parseFloat(pGamma.value); });
-  const pAG = $("#paramAlphaGullible"); if(pAG) pAG.addEventListener('change', ()=> { 
-    SCIENTIFIC_PARAMS.alpha_gullible = parseFloat(pAG.value);
-    updateSegregationMetrics();  // Aggiorna threshold
-  });
-  const pAS = $("#paramAlphaSkeptic"); if(pAS) pAS.addEventListener('change', ()=> { 
-    SCIENTIFIC_PARAMS.alpha_skeptic = parseFloat(pAS.value);
-    updateSegregationMetrics();  // Aggiorna threshold
-  });
+  // NOTA ARCHITETTURALE: I gestori per la modifica dei parametri scientifici
+  // (alpha, beta, p_v, p_f) sono stati rimossi in quanto questi parametri
+  // sono ora gestiti esclusivamente dal backend API. L'interfaccia utente
+  // puo visualizzare valori di riferimento ma non modificare la simulazione.
 }
 
-// Bottone Mode
+// =============================================================================
+// GESTIONE DEL MODALE DI SELEZIONE MODALITA
+// =============================================================================
 const btnMode = $("#btnMode");
 if(btnMode){
   btnMode.addEventListener("click", ()=>{
-    // Quando si apre il modal, ripristina il bottone selezionato
+    // Ripristino dello stato di selezione al momento dell'apertura
     setTimeout(()=>{
       if(selectedMode) {
         const selected = $(`[data-mode="${selectedMode}"]`);
@@ -1531,7 +1695,7 @@ if(btnMode){
 const modeClose = $("#modeClose");
 if(modeClose) modeClose.addEventListener("click", ()=> closeModal("#modeModal"));
 
-// Gestione modale Modalità con selezione e applica
+// Configurazione della logica di selezione nel modale delle modalita
 (function setupModeModal(){
   const modeOpts = $$("[data-mode]");
   modeOpts.forEach(opt => {
@@ -1556,28 +1720,36 @@ if(modeClose) modeClose.addEventListener("click", ()=> closeModal("#modeModal"))
   }
 })();
 
-// bootstrap
+// =============================================================================
+// INIZIALIZZAZIONE DELL'APPLICAZIONE
+// Funzione IIFE (Immediately Invoked Function Expression) che configura
+// lo stato iniziale dell'applicazione e registra i gestori degli eventi.
+// =============================================================================
 (function init(){
   const daysTotal = $("#daysTotal");
   if(daysTotal) daysTotal.textContent = CONST.DAYS;
-  // imposta parametri iniziali
+  // Calcolo del parametro di dimenticanza basato sulla durata della simulazione
   CONST.FORGET_DAYS = Math.max(1, Math.round(GAME_PARAMS.forgetting * CONST.DAYS));
-  // renderGraph() viene chiamato DOPO initializeGame() quando è selezionata la modalità
+  // Il rendering del grafo viene posticipato fino alla selezione della modalita
   initGameBaseHandlers();
-  // Inizializza handlers per le nuove funzionalità Strategica/Competitiva
+  // Registrazione dei gestori per le funzionalita avanzate
   initStrategicHandlers();
   initCompetitiveHandlers();
-  // Game Base mostra solo il messaggio iniziale, nessuna modalità ancora scelta
+  // L'interfaccia iniziale mostra solo il messaggio di benvenuto
 })();
 
-// ===== FUNZIONI STRATEGICHE (BOOSTS, CAMPAIGNS, PREDICTIVE) =====
+// =============================================================================
+// FUNZIONI PER LA MODALITA STRATEGICA
+// Gestione dei potenziamenti (boost), delle campagne mirate e delle
+// previsioni sull'evoluzione della simulazione.
+// =============================================================================
 function initStrategicHandlers(){
-  // mostra/nascondi sezioni quando modalità Strategica selezionata
+  // Configurazione della visibilita delle sezioni specifiche
   const show = () => {
     const ids = ['#hr-strategies','#gb-strategies','#hr-boosts','#gb-boosts','#hr-targeted','#gb-targeted','#hr-predictive','#gb-predictive'];
     ids.forEach(id=>{ const el=$(id); if(el) el.style.display=''; });
   };
-  // bind boost buttons
+  // Registrazione degli eventi per i pulsanti dei potenziamenti
   const boostIds = ['#boostTruthAmp','#boostFakeVirus','#boostMassDebunk','#boostMemoryWipe','#boostSegregation'];
   boostIds.forEach(id=>{
     const el = $(id);
@@ -1585,24 +1757,28 @@ function initStrategicHandlers(){
     el.addEventListener('click', ()=> purchaseBoost(el.id, parseInt(el.dataset.cost,10)));
   });
 
-  // campaigns
+  // Registrazione degli eventi per le campagne mirate
   const camps = ['#campGullible','#campSkeptic','#campFrontier'];
   camps.forEach(s=>{ const el = $(s); if(!el) return; el.addEventListener('click', ()=> purchaseCampaign(el)); });
 
-  // predictive
+  // Pulsante per le previsioni (funzionalita disabilitata)
   const btnPredict = $('#btnPredictNext3');
   if(btnPredict) btnPredict.addEventListener('click', ()=> showPredictiveNext3());
 
-  // achievements grid skeleton
+  // Inizializzazione della griglia degli achievement
   renderAchievementsUI();
   
-  // Update button states on coin change
+  // Aggiornamento dello stato dei pulsanti in base alle risorse disponibili
   updateButtonStates();
 }
 
-// Aggiorna stato disabilitazione dei bottoni in base alle monete disponibili
+// =============================================================================
+// AGGIORNAMENTO DELLO STATO DEI CONTROLLI
+// Abilita o disabilita i pulsanti in base alle risorse disponibili (crediti)
+// e alle restrizioni della modalita di gioco corrente.
+// =============================================================================
 function updateButtonStates(){
-  // Boost buttons
+  // Verifica disponibilita per i pulsanti dei potenziamenti
   const boostIds = ['#boostTruthAmp','#boostFakeVirus','#boostMassDebunk','#boostMemoryWipe','#boostSegregation'];
   boostIds.forEach(id=>{
     const el = $(id);
@@ -1614,7 +1790,7 @@ function updateButtonStates(){
     el.style.cursor = canAfford ? 'pointer' : 'not-allowed';
   });
   
-  // Campaign buttons
+  // Verifica disponibilita per i pulsanti delle campagne
   const camps = ['#campGullible','#campSkeptic','#campFrontier'];
   camps.forEach(id=>{
     const el = $(id);
@@ -1626,7 +1802,7 @@ function updateButtonStates(){
     el.style.cursor = canAfford ? 'pointer' : 'not-allowed';
   });
   
-  // Battle buttons
+  // Verifica disponibilita per le azioni competitive (limite giornaliero)
   const battles = ['#battleSabotage','#battleSteal','#battleReverse'];
   battles.forEach(id=>{
     const el = $(id);
@@ -1639,12 +1815,17 @@ function updateButtonStates(){
   });
 }
 
+// =============================================================================
+// ACQUISTO E ATTIVAZIONE DEI POTENZIAMENTI
+// Gestisce la transazione economica e l'effetto del potenziamento selezionato.
+// Ciascun boost ha un effetto specifico sulla dinamica della simulazione.
+// =============================================================================
 function purchaseBoost(boostId, cost){
   if(!state.game.boostMgr) return showToast('Sistema non inizializzato');
   if(state.game.coins < cost) return showToast('Monete insufficienti');
   state.game.coins -= cost;
   
-  // 🏆 Track per trofei
+  // Aggiornamento delle statistiche per il sistema di achievement
   state.game.coins > TROPHY_SYSTEM.stats.maxCoins && (TROPHY_SYSTEM.stats.maxCoins = state.game.coins);
   TROPHY_SYSTEM.stats.boostsUsed[boostId] = (TROPHY_SYSTEM.stats.boostsUsed[boostId] || 0) + 1;
   
@@ -1678,6 +1859,7 @@ function purchaseBoost(boostId, cost){
   TROPHY_SYSTEM.checkUnlocks();
 }
 
+// Acquisto di una campagna mirata su una specifica comunita della rete
 function purchaseCampaign(el){
   const cost = parseInt(el.dataset.cost,10) || 0;
   if(state.game.coins < cost) return showToast('Monete insufficienti');
@@ -1689,20 +1871,27 @@ function purchaseCampaign(el){
   updateGameBaseUI();
 }
 
+// =============================================================================
+// APPLICAZIONE DEL DEBUNKING MASSIVO
+// Converte una frazione dei Believer in Fact-Checker.
+// NOTA: Questa operazione ha effetto solo sulla visualizzazione locale;
+// l'API backend potrebbe ripristinare gli stati originali al passo successivo.
+// =============================================================================
 function applyMassDebunk(frac){
-  const believers = state.scientificNodes ? state.scientificNodes.filter(n=>n.state==='B') : [];
+  // Selezione dei nodi attualmente nello stato Believer
+  const believers = state.nodes.filter(n => n.scientificState === 'B');
   const toConvert = Math.max(1, Math.floor(believers.length * frac));
   
-  // Anima i nodi che vengono convertiti
-  believers.slice(0, toConvert).forEach(scientificNode => {
-    const d3Node = state.nodes.find(n => n.id === scientificNode.nodeId);
-    if(d3Node) {
-      d3Node.isConverting = true; // flag per animazione
-      setTimeout(() => {
-        d3Node.isConverting = false;
-      }, 600);
-    }
-    scientificNode.state = 'F';
+  // Applicazione dell'effetto visivo di transizione
+  believers.slice(0, toConvert).forEach(node => {
+    node.isConverting = true; // Flag per l'animazione di conversione
+    setTimeout(() => {
+      node.isConverting = false;
+    }, 600);
+    
+    // Aggiornamento dello stato visuale (non sincronizzato con l'API)
+    node.scientificState = 'FC';
+    node.memory = 'truth';
   });
   
   // Aggiorna visualmente subito
@@ -1714,18 +1903,30 @@ function applyMassDebunk(frac){
   setTimeout(() => {
     gNodes.selectAll("circle").classed("highlight-debunk", false);
   }, 600);
+  
+  // AVVERTENZA: La modifica dello stato e puramente visiva e temporanea.
+  // Il backend API mantiene lo stato autoritativo della simulazione.
+  showToast(`Mass Debunk: ${toConvert} nodi convertiti (effetto visivo)`);
 }
 
+// =============================================================================
+// APPLICAZIONE DEL MEMORY WIPE
+// Riporta una frazione casuale di nodi allo stato Susceptible,
+// simulando la perdita di memoria dell'informazione precedente.
+// =============================================================================
 function applyMemoryWipe(frac){
-  const arr = state.scientificNodes || [];
+  // Operazione sulla cache locale dei nodi
+  const arr = state.nodes;
   const total = arr.length;
   const count = Math.max(1, Math.floor(total * frac));
   const shuffled = [...arr].sort(()=>Math.random()-0.5);
   
-  // Anima
-  shuffled.slice(0, count).forEach(scientificNode => {
-    const d3Node = state.nodes.find(n => n.id === scientificNode.nodeId);
-    if(d3Node) d3Node.isWiping = true;
+  // Applicazione dell'effetto visivo di reset
+  shuffled.slice(0, count).forEach(node => {
+    node.isWiping = true;
+    // Transizione visuale allo stato Susceptible
+    node.scientificState = 'S';
+    node.memory = 'neutral';
   });
   
   gNodes.selectAll("circle")
@@ -1742,18 +1943,24 @@ function applyMemoryWipe(frac){
   }, 400);
 }
 
+// Visualizzazione dell'elenco dei potenziamenti attualmente attivi
 function renderBoostsActive(){
-  if(!state.game.boostMgr) return; // Sicurezza
+  if(!state.game.boostMgr) return; // Verifica di sicurezza
   const active = state.game.boostMgr.getActive();
   const el = $("#boosts-active-list"); 
   if(el) el.textContent = active.length ? active.join(', ') : '—';
 }
 
+// =============================================================================
+// RENDERING DELL'INTERFACCIA DEGLI ACHIEVEMENT
+// Genera dinamicamente la griglia dei trofei organizzati per categoria,
+// con indicazione visiva dello stato di sblocco.
+// =============================================================================
 function renderAchievementsUI(){
   const grid = $("#achievements-grid"); if(!grid) return;
   grid.innerHTML = '';
   
-  // Raggruppa trofei per categoria
+  // Definizione delle categorie con relativi attributi visivi
   const categories = {
     fake: { label: '🔴 Disinformazione', color: '#ef4444' },
     truth: { label: '🟢 Verità', color: '#22c55e' },
@@ -1797,108 +2004,22 @@ function renderAchievementsUI(){
   }
 }
 
+// =============================================================================
+// FUNZIONALITA PREDITTIVA (DISABILITATA)
+// La simulazione predittiva locale e stata disabilitata in quanto tutti
+// i calcoli del modello epidemiologico sono ora delegati all'API backend.
+// Per implementare questa funzionalita sarebbe necessario un endpoint
+// API dedicato che restituisca le proiezioni future.
+// =============================================================================
 function showPredictiveNext3(){
-  if(!state.scientificModel.enabled) return showToast('Solo in modalità con modello scientifico');
-  
-  // Crea nuove istanze ScientificNodeState per la simulazione predittiva
-  const simNodes = (state.scientificNodes || []).map(n => {
-    const newNode = new ScientificNodeState(n.nodeId, n.community);
-    newNode.state = n.state;
-    newNode.alpha = n.alpha;
-    newNode.pf_override = n.pf_override;
-    newNode.isEternalFC = n.isEternalFC;
-    return newNode;
-  });
-  const simLinks = [...state.links];
-  const results = [];
-  
-  // Salva parametri originali
-  const origParams = { ...SCIENTIFIC_PARAMS };
-  const origAlphas = simNodes.map(n=>n.alpha);
-  
-  // Algoritmo strategico: favorisce il team del giocatore in Strategica/Competitiva
-  const playerTeam = selectedMode === "Strategica" ? null : state.game.playerTeam; // null = non strategico
-  const strategyMultiplier = playerTeam ? 1.3 : 1.0; // Boost 30% per il team del giocatore
-  
-  for(let d=0; d<3; d++){
-    // Applica boost/campaign temporaneamente per previsione accurata
-    if(state.game.boostMgr && state.game.boostMgr.isActive('truthAmp')){
-      SCIENTIFIC_PARAMS.pv = Math.min(1, SCIENTIFIC_PARAMS.pv * 1.5);
-      if(playerTeam === 'truth') SCIENTIFIC_PARAMS.pv = Math.min(1, SCIENTIFIC_PARAMS.pv * strategyMultiplier);
-    }
-    if(state.game.boostMgr && state.game.boostMgr.isActive('fakeVirus')){
-      SCIENTIFIC_PARAMS.beta = Math.min(1, SCIENTIFIC_PARAMS.beta * 1.5);
-      if(playerTeam === 'fake') SCIENTIFIC_PARAMS.beta = Math.min(1, SCIENTIFIC_PARAMS.beta * strategyMultiplier);
-    }
-    if(state.game.campaign && state.game.campaign.active){
-      const alphaFactor = 1 - (((state.game.campaign.multiplier||1.2)-1) * 0.6);
-      simNodes.forEach(n=>{
-        if(state.game.campaign.targetCommunity === 'frontier'){
-          if(n.community === 'gullible') n.alpha = n.alpha * alphaFactor;
-        } else if(n.community === state.game.campaign.targetCommunity){
-          n.alpha = n.alpha * alphaFactor;
-        }
-      });
-    }
-    
-    const r = simulateOneDay(simNodes, simLinks);
-    
-    // Strategic outcome: se in competitiva, applica effetto team favorito
-    let adjR = { ...r };
-    if(playerTeam === 'fake' && selectedMode === "Competitiva"){
-      // Fake vincono: redistribuisci un po' di verità verso fake
-      const truthToFake = Math.floor(r.counts.F * 0.15);
-      adjR.counts.B += truthToFake;
-      adjR.counts.F = Math.max(0, adjR.counts.F - truthToFake);
-    } else if(playerTeam === 'truth' && selectedMode === "Competitiva"){
-      // Verità vincono: redistribuisci un po' di fake verso verità
-      const fakeToTruth = Math.floor(r.counts.B * 0.15);
-      adjR.counts.F += fakeToTruth;
-      adjR.counts.B = Math.max(0, adjR.counts.B - fakeToTruth);
-    }
-    
-    // Ricalcola densità
-    const total = adjR.counts.S + adjR.counts.B + adjR.counts.F;
-    adjR.densities = {
-      S: adjR.counts.S / total,
-      B: adjR.counts.B / total,
-      F: adjR.counts.F / total
-    };
-    
-    results.push(adjR.densities);
-    
-    // Ripristina per iterazione successiva
-    SCIENTIFIC_PARAMS.pv = origParams.pv;
-    SCIENTIFIC_PARAMS.beta = origParams.beta;
-    simNodes.forEach((n,i)=> n.alpha = origAlphas[i]);
-    
-    // Aggiorna stato per step successivo
-    simNodes.forEach((sn, idx)=> sn.state = adjR.counts.B> adjR.counts.F ? 'B' : (adjR.counts.F> adjR.counts.B? 'F' : 'S'));
-  }
-  
-  const canvas = $("#predictiveChart");
-  if(canvas){
-    canvas.style.display = '';
-    const labels = ['+1','+2','+3'];
-    const dataFake = results.map(r=> Math.round(r.B*100));
-    const dataTruth = results.map(r=> Math.round(r.F*100));
-    const ctx = canvas.getContext('2d');
-    if(state.game.predictiveChart) state.game.predictiveChart.destroy();
-    state.game.predictiveChart = new Chart(ctx, {
-      type: 'line', 
-      data: { 
-        labels, 
-        datasets:[
-          {label:'🔴 Fake %', data:dataFake, borderColor:'#ef4444', tension: 0.4, fill: false, borderWidth: 2},
-          {label:'🟢 Truth %', data:dataTruth, borderColor:'#22c55e', tension: 0.4, fill: false, borderWidth: 2}
-        ] 
-      }, 
-      options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{font:{size:12}}}}, scales:{y:{max:100}}}
-    });
-  }
+  showToast('Previsioni disabilitate: utilizza l\'API per la simulazione');
+  return;
 }
 
-// ===== HANDLERS COMPETITIVA =====
+// =============================================================================
+// GESTORI DELLA MODALITA COMPETITIVA
+// Funzioni per le azioni speciali disponibili nella competizione contro l'AI.
+// =============================================================================
 function initCompetitiveHandlers(){
   const show = ()=>{
     const ids = ['#hr-competitive','#gb-competitive']; ids.forEach(id=>{ const el=$(id); if(el) el.style.display=''; });
@@ -1906,6 +2027,7 @@ function initCompetitiveHandlers(){
   ["#battleSabotage","#battleSteal","#battleReverse"].forEach(id=>{ const el=$(id); if(!el) return; el.addEventListener('click', ()=> performBattleAction(id)); });
 }
 
+// Esecuzione di un'azione competitiva contro l'avversario AI
 function performBattleAction(id){
   const el = $(id); if(!el) return;
   const cost = parseInt(el.dataset.cost,10) || 0;
@@ -1934,7 +2056,10 @@ function performBattleAction(id){
   updateCPUStats();
 }
 
-// Aggiorna visivamente le statistiche del CPU
+// =============================================================================
+// AGGIORNAMENTO DELLE STATISTICHE DELL'AVVERSARIO AI
+// Calcola e visualizza i contatori di performance per entrambi i giocatori.
+// =============================================================================
 function updateCPUStats(){
   if(!state.game.cpuOpponent) return;
   const counts = computeCounts();
@@ -1946,7 +2071,7 @@ function updateCPUStats(){
   const pfC = $("#playerFakeComp"); if(pfC) pfC.textContent = playerFakePct;
   const ptC = $("#playerTruthComp"); if(ptC) ptC.textContent = playerTruthPct;
   
-  // CPU stats (simulato)
+  // Statistiche dell'AI (stimate con variazione stocastica)
   const cpuCounts = { fake: Math.floor(counts.fake * (0.8 + Math.random()*0.4)), truth: Math.floor(counts.truth * (1.2 + Math.random()*0.3)) };
   const cpuFakePct = pct(cpuCounts.fake, total);
   const cpuTruthPct = pct(cpuCounts.truth, total);
@@ -1955,7 +2080,11 @@ function updateCPUStats(){
   const ctC = $("#cpuTruthComp"); if(ctC) ctC.textContent = cpuTruthPct;
 }
 
-// AI fa una mossa nel stepOneDay (dopo che il giocatore ha giocato)
+// =============================================================================
+// DECISIONE DELL'AVVERSARIO AI
+// Invocata al termine di ogni turno del giocatore nella modalita competitiva.
+// L'algoritmo valuta lo stato corrente e seleziona l'azione ottimale.
+// =============================================================================
 function makeAIMove(){
   if(!state.game.cpuOpponent || selectedMode !== "Competitiva") return;
   
@@ -1964,7 +2093,7 @@ function makeAIMove(){
   const playerFakePct = pct(counts.fake, total);
   const playerTruthPct = pct(counts.truth, total);
   
-  // AI delibera mossa
+  // Calcolo della mossa ottimale dell'AI
   const move = state.game.cpuOpponent.makeMove(playerFakePct, playerTruthPct, total);
   
   if(move){
@@ -1981,10 +2110,29 @@ function makeAIMove(){
   updateCPUStats();
 }
 
-
+// Aggiornamento sincronizzato di tutti gli elementi dell'interfaccia di gioco
 function updateGameBaseUI(){
   const coins = $("#coinsValue"); if(coins) coins.textContent = state.game.coins;
   const moves = $("#movesLeft"); if(moves) moves.textContent = state.game.movesLeft;
   renderBoostsActive();
   updateButtonStates();
 }
+
+// =============================================================================
+// INIZIALIZZAZIONE AUTOMATICA AL CARICAMENTO DELLA PAGINA
+// Configura l'ambiente di simulazione appena il DOM e completamente caricato.
+// =============================================================================
+window.addEventListener('DOMContentLoaded', async () => {
+  console.log('Inizializzazione automatica del grafo...');
+  try {
+    // Caricamento del grafo e inizializzazione della comunicazione con l'API
+    await buildGraph(336, true);
+    // Rendering della visualizzazione basata sui dati di graph.json
+    renderGraph();
+    updateKPI();
+    console.log('Grafo inizializzato con successo');
+  } catch (error) {
+    console.error('Errore durante l\'inizializzazione automatica:', error);
+    showToast('Errore inizializzazione grafo. Ricarica la pagina.');
+  }
+});
