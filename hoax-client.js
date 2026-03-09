@@ -29,6 +29,59 @@ class HoaxAPIClient {
   }
 
   /**
+   * Genera un nuovo grafo con i parametri specificati per la modalità di gioco.
+   * Utilizza l'endpoint /api/v1/graph per creare il grafo direttamente dall'API.
+   * 
+   * @param {string} mode - Modalità di gioco ('libera', 'strategica', 'competitiva')
+   * @param {number} nNodes - Numero di nodi (default: 50 per visualizzazione chiara)
+   * @param {number} avgDegree - Grado medio del grafo (default: 4)
+   * @param {boolean} clustered - Se creare cluster nel grafo (default: true)
+   */
+  async generateGraph(mode = 'libera', nNodes = 50, avgDegree = 4, clustered = true) {
+
+    // Parametri unificati per tutte le modalità
+    const unifiedParams = {
+      alpha: {"sk": 0.4, "gu": 0.95},
+      beta: 0.5,
+      p_v: 0.0,
+      p_f: 0.05,
+      initial_believers_perc: 0.02,
+      initial_factcheckers_perc: 0.00
+    };
+
+    const params = {
+      n_nodes: nNodes,
+      avg_degree: avgDegree,
+      alpha: unifiedParams.alpha,
+      beta: unifiedParams.beta,
+      p_v: unifiedParams.p_v,
+      p_f: unifiedParams.p_f,
+      initial_believers_perc: unifiedParams.initial_believers_perc,
+      initial_factcheckers_perc: unifiedParams.initial_factcheckers_perc,
+      clustered: clustered,
+      mode: mode
+    };
+
+    console.log(`📡 Generazione grafo via API: ${nNodes} nodi, mode: ${mode}`);
+    console.log('Parametri:', params);
+
+    const response = await fetch(`${this.baseUrl}/api/v1/graph`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Errore generazione grafo: ${error.detail || response.statusText}`);
+    }
+
+    const data = await response.json();
+    this.isReady = true;
+    return data;
+  }
+
+  /**
    * Carica un grafo esterno (es. graph.json) nel simulatore.
    * TUTTI i parametri (alpha, beta, p_v, p_f, initial_believers_perc, initial_factcheckers_perc)
    * vengono determinati dall'API in base alla modalità scelta.

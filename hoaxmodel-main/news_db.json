@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "text": "La NASA ha trovato acqua liquida su Marte.",
+    "is_fake": false,
+    "source": "ANSA"
+  },
+  {
+    "id": 2,
+    "text": "Bere acqua calda ogni mattina elimina il rischio di tumore.",
+    "is_fake": true,
+    "source": "bufale.net"
+  },
+  {
+    "id": 3,
+    "text": "Un uomo ha corso una maratona ogni giorno per un anno.",
+    "is_fake": false,
+    "source": "La Gazzetta dello Sport"
+  },
+  {
+    "id": 4,
+    "text": "I vaccini causano autismo secondo uno studio recente.",
+    "is_fake": true,
+    "source": "Il Fatto Quotidiano"
+  },
+  {
+    "id": 5,
+    "text": "Il telescopio James Webb ha fotografato una galassia a 13 miliardi di anni luce.",
+    "is_fake": false,
+    "source": "Repubblica"
+  },
+  {
+    "id": 6,
+    "text": "Il governo italiano ha approvato il bonus vacanze per tutti i cittadini nel 2025.",
+    "is_fake": true,
+    "source": "Corriere della Sera"
+  }
+]

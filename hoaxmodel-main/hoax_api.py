@@ -87,10 +87,10 @@ logger.setLevel(logging.DEBUG)
 GAME = HoaxGameState()
 app = FastAPI(title="Fake News Diffusion Game API")
 
-# Abilita CORS per il frontend
+# Configura CORS per permettere richieste dal frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -287,159 +287,6 @@ def run_simulation_step():
         }
 
     return return_data
-
-# Preset di parametri per le diverse modalità di gioco
-MODE_PRESETS = {
-    "libera": {
-        # Modalità libera: parametri bilanciati, l'utente può sperimentare
-        "alpha": 0.5,
-        "beta": 0.5,
-        "p_v": 0.4,
-        "p_f": 0.15,
-        "initial_believers_perc": 0.90,
-        "initial_factcheckers_perc": 0.02
-    },
-    "strategica": {
-        # Modalità strategica: richiede pianificazione, diffusione lenta ma persistente
-        "alpha": 0.95,   # Credulità media-alta
-        "beta": 0.1,    # Diffusione moderata
-        "p_v": 0.05,    # Verifica medio-bassa
-        "p_f": 0.0,     # Difficile dimenticare (fake persistenti)
-        "initial_believers_perc": 0.90,
-        "initial_factcheckers_perc": 0.00
-    },
-    "competitiva": {
-        # Modalità competitiva: scenario difficile, fake news aggressive
-        "alpha": 0.8,   # Alta credulità
-        "beta": 0.7,    # Alta diffusione
-        "p_v": 0.2,     # Bassa verifica
-        "p_f": 0.05,    # Quasi mai dimenticano
-        "initial_believers_perc": 0.15,
-        "initial_factcheckers_perc": 0.05
-    }
-}
-
-class LoadGraphParams(BaseModel):
-    """Parametri per caricare un grafo esterno con configurazione della simulazione."""
-    nodes: List[Dict[str, Any]] = Field(..., description="Lista dei nodi con id e attributi")
-    links: List[Dict[str, Any]] = Field(..., description="Lista degli archi (source, target)")
-    mode: Optional[str] = Field(None, description="Modalità preset: 'default', 'scientific', 'pessimistic', 'optimistic'. Se specificato, sovrascrive i parametri.")
-    alpha: Optional[float] = Field(None, description="Probabilità di credibilità (sovrascrive preset)")
-    beta: Optional[float] = Field(None, ge=0, le=1, description="Probabilità di diffusione (sovrascrive preset)")
-    p_v: Optional[float] = Field(None, ge=0, le=1, description="Probabilità di verifica (sovrascrive preset)")
-    p_f: Optional[float] = Field(None, ge=0, le=1, description="Probabilità di dimenticare (sovrascrive preset)")
-    initial_believers_perc: Optional[float] = Field(None, ge=0, le=1, description="Percentuale iniziale Believers (sovrascrive preset)")
-    initial_factcheckers_perc: Optional[float] = Field(None, ge=0, le=1, description="Percentuale iniziale Fact-Checkers (sovrascrive preset)")
-
-def get_effective_params(params: LoadGraphParams) -> dict:
-    """Restituisce i parametri effettivi basati sulla modalità e eventuali override."""
-    # Parti dal preset (libera se non specificato)
-    mode = params.mode or "libera"
-    preset = MODE_PRESETS.get(mode, MODE_PRESETS["libera"]).copy()
-    
-    # Override con valori espliciti se forniti
-    if params.alpha is not None:
-        preset["alpha"] = params.alpha
-    if params.beta is not None:
-        preset["beta"] = params.beta
-    if params.p_v is not None:
-        preset["p_v"] = params.p_v
-    if params.p_f is not None:
-        preset["p_f"] = params.p_f
-    if params.initial_believers_perc is not None:
-        preset["initial_believers_perc"] = params.initial_believers_perc
-    if params.initial_factcheckers_perc is not None:
-        preset["initial_factcheckers_perc"] = params.initial_factcheckers_perc
-    
-    return preset
-
-@app.post("/api/v1/graph/load", response_model=Dict[str, Any])
-def load_external_graph(params: LoadGraphParams):
-    """
-    Carica un grafo esterno (es. graph.json) e inizializza il simulatore.
-    
-    Modalità disponibili:
-    - libera: parametri bilanciati per sperimentare
-    - strategica: diffusione lenta ma persistente, richiede pianificazione
-    - competitiva: scenario difficile, fake news aggressive
-    """
-    try:
-        # Ottieni i parametri effettivi in base alla modalità
-        effective = get_effective_params(params)
-        logger.info(f"🎮 Modalità: {params.mode or 'default'}, Parametri: {effective}")
-        
-        # 1. Crea il grafo NetworkX dai dati esterni
-        G = nx.Graph()
-        
-        # Aggiungi nodi
-        node_ids = []
-        for i, node in enumerate(params.nodes):
-            node_id = i  # Usa indice numerico
-            node_ids.append(node_id)
-            G.add_node(node_id, **{k: v for k, v in node.items() if k != 'id'})
-        
-        # Mappa id originali -> indici numerici
-        original_ids = [node.get('id', i) for i, node in enumerate(params.nodes)]
-        id_map = {orig: idx for idx, orig in enumerate(original_ids)}
-        
-        # Aggiungi archi
-        for link in params.links:
-            src = id_map.get(link['source'], link.get('source'))
-            tgt = id_map.get(link['target'], link.get('target'))
-            if src in G.nodes and tgt in G.nodes:
-                G.add_edge(src, tgt)
-        
-        n_nodes = G.number_of_nodes()
-        avg_degree = sum(dict(G.degree()).values()) / n_nodes if n_nodes > 0 else 0
-        
-        # 2. Crea la configurazione usando i parametri effettivi
-        GAME.config = HoaxConfig(
-            num_nodes=n_nodes,
-            average_degree=int(avg_degree),
-            alpha=effective["alpha"],
-            beta=effective["beta"],
-            p_v=effective["p_v"],
-            p_f=effective["p_f"],
-            perc_believers=effective["initial_believers_perc"],
-            perc_factcheckers=effective["initial_factcheckers_perc"],
-            clustered=False,
-            verbose=False
-        )
-        
-        # 3. Imposta gullibility sui nodi
-        alpha_val = effective["alpha"]
-        for node in G.nodes:
-            G.nodes[node]['gullibility'] = alpha_val
-        
-        # 4. Inizializza il simulatore
-        GAME.sim = Simulation(
-            G,
-            partial(hoax_initial_state, config=GAME.config),
-            partial(hoax_state_transition, config=GAME.config),
-            stop_condition,
-            name='hoax model (external graph)',
-            state_labels=['S', 'B', 'FC'],
-            state_colors=GAME.config.state_colors
-        )
-        
-        init_nodes_state()
-        
-        # 5. Prepara risposta
-        graph_data = {
-            "n_nodes": G.number_of_nodes(),
-            "n_edges": G.number_of_edges(),
-            "edges": list(G.edges()),
-            "node_states": GAME.node_states,
-            "gullibility": nx.get_node_attributes(G, 'gullibility'),
-            "id_map": {str(k): v for k, v in id_map.items()}  # Per mappare ID originali
-        }
-        
-        logger.info(f"Grafo esterno caricato: {n_nodes} nodi, {G.number_of_edges()} archi")
-        return graph_data
-        
-    except Exception as e:
-        logger.error(f"Errore in load_external_graph: {e}")
-        raise HTTPException(status_code=400, detail=f"Errore nel caricamento del grafo: {e}")
 
 # --- 4. Esecuzione del Server ---
 # Esegui con: uvicorn hoax_api:app --reload

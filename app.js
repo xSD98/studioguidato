@@ -1,13 +1,1449 @@
 // =============================================================================
+// MODALITÀ "SCEGLI IL LATO"
+// Database di notizie reali e fake per il gameplay
+// =============================================================================
+
+// Variabile globale per la modalità selezionata
+let selectedMode = null;
+
+const NEWS_DATABASE = [
+  {
+    title: "Vaccino COVID-19 contiene microchip per il controllo mentale",
+    text: "Secondo fonti anonime, i vaccini COVID-19 conterrebbero microchip sviluppati da una nota azienda tecnologica per monitorare e controllare il comportamento delle persone.",
+    source: "FACEBOOK",
+    isFake: true
+  },
+  {
+    title: "L'OMS dichiara l'acqua potabile dannosa per la salute",
+    text: "Un recente studio dell'Organizzazione Mondiale della Sanità avrebbe dimostrato che bere acqua potabile aumenta il rischio di malattie gravi.",
+    source: "BUFALE.NET",
+    isFake: true
+  },
+  {
+    title: "Il cambiamento climatico è confermato da 97% degli scienziati",
+    text: "Un'analisi di oltre 12.000 articoli scientifici peer-reviewed ha confermato che il 97% degli scienziati concordano sul fatto che il cambiamento climatico è causato dall'attività umana.",
+    source: "ANSA",
+    isFake: false
+  },
+  {
+    title: "Gli smartphone causano tumori al cervello",
+    text: "Studi scientifici dimostrerebbero che l'uso prolungato dello smartphone provoca inevitabilmente tumori cerebrali.",
+    source: "IL FATTO QUOTIDIANO",
+    isFake: true
+  },
+  {
+    title: "La Terra è piatta secondo nuove ricerche",
+    text: "Un gruppo di ricercatori indipendenti avrebbe dimostrato con foto satellitari che la Terra è in realtà piatta e non sferica.",
+    source: "YOUTUBE",
+    isFake: true
+  },
+  {
+    title: "L'esercizio fisico regolare riduce il rischio di malattie cardiovascolari",
+    text: "Studi pubblicati su riviste mediche peer-reviewed dimostrano che 150 minuti di attività fisica moderata a settimana riducono significativamente il rischio di malattie cardiache.",
+    source: "SKY TG24",
+    isFake: false
+  },
+  {
+    title: "Mangiare carote migliora la vista notturna",
+    text: "Consumare grandi quantità di carote permetterebbe di vedere perfettamente al buio grazie al beta-carotene.",
+    source: "FACEBOOK",
+    isFake: true
+  },
+  {
+    title: "Le mascherine chirurgiche riducono la trasmissione di virus respiratori",
+    text: "Studi clinici controllati hanno dimostrato che l'uso corretto di mascherine chirurgiche riduce significativamente la trasmissione di virus respiratori come influenza e coronavirus.",
+    source: "RADIO GOLD",
+    isFake: false
+  }
+];
+
+let currentNews = null;
+let playerTeam = null; // 'believer' o 'fact_checker'
+let currentUser = null; // Dati utente loggato
+
+// =============================================================================
+// SISTEMA POWER-UPS E BUDGET PER "SCEGLI IL LATO"
+// =============================================================================
+const playerState = {
+  budget: 500,
+  budgetRechargeCounter: 0,
+  budgetRechargeTurns: 3,
+  activePowerups: [],
+  originalParams: null // Salva parametri originali per reset dopo power-up
+};
+
+// Configurazione Power-ups
+const POWERUPS = {
+  // Team Believer
+  fakeBurst: {
+    id: 'fakeBurst',
+    name: 'Fake Burst',
+    cost: 120,
+    duration: 1,
+    team: 'believer',
+    description: 'Raddoppia probabilità contagio',
+    apply: () => {
+      // Converte forzatamente 3-5 nodi Susceptible in Believer
+      return { forceConvert: { target: 'B', count: 4, from: 'S' } };
+    }
+  },
+  payInfluencer: {
+    id: 'payInfluencer',
+    name: 'Paga Influencer',
+    cost: 200,
+    duration: 4,
+    team: 'believer',
+    description: '+25% conversione Believer',
+    apply: () => {
+      // Ogni turno converte 2 nodi Susceptible in Believer
+      return { convertPerTurn: { target: 'B', count: 2, from: 'S' } };
+    }
+  },
+  emergencyBeliever: {
+    id: 'emergencyBeliever',
+    name: 'EMERGENZA',
+    cost: 300,
+    duration: 5,
+    team: 'believer',
+    description: 'Inverte il trend',
+    apply: () => {
+      // Converte 10% dei Fact-Checker in Susceptible + converte 2 nodi S->B per turno
+      return { 
+        initialEffect: { target: 'S', count: 0.1, from: 'FC', percentage: true },
+        convertPerTurn: { target: 'B', count: 3, from: 'S' }
+      };
+    }
+  },
+  
+  // Team Fact-Checker
+  talkFriend: {
+    id: 'talkFriend',
+    name: 'Parla con un Amico',
+    cost: 80,
+    duration: 1,
+    team: 'fact_checker',
+    description: 'Converti 1 vicino casuale',
+    apply: () => {
+      // Questo power-up converte direttamente un nodo invece di modificare parametri
+      return { instantConversion: true, convertCount: 1 };
+    }
+  },
+  nationalDebunk: {
+    id: 'nationalDebunk',
+    name: 'Smentita Nazionale',
+    cost: 200,
+    duration: 4,
+    team: 'fact_checker',
+    description: '+25% conversione FC',
+    apply: () => {
+      // Ogni turno converte 2 Believer in Fact-Checker
+      return { convertPerTurn: { target: 'FC', count: 2, from: 'B' } };
+    }
+  },
+  emergencyFC: {
+    id: 'emergencyFC',
+    name: 'EMERGENZA',
+    cost: 300,
+    duration: 5,
+    team: 'fact_checker',
+    description: 'Inverte il trend',
+    apply: () => {
+      // Converte 10% dei Believer in Susceptible + converte 3 nodi S->FC per turno
+      return { 
+        initialEffect: { target: 'S', count: 0.1, from: 'B', percentage: true },
+        convertPerTurn: { target: 'FC', count: 3, from: 'S' }
+      };
+    }
+  }
+};
+
+// =============================================================================
+// PALETTE COLORI PER DALTONISMO
+// Palette ottimizzate per diversi tipi di daltonismo
+// =============================================================================
+const COLORBLIND_PALETTES = {
+  normal: {
+    believer: '#ef4444',      // Rosso
+    factChecker: '#22c55e',   // Verde
+    susceptible: '#94a3b8',   // Grigio
+    eternal: '#00d4ff'        // Ciano
+  },
+  protanopia: {
+    believer: '#d4a017',      // Oro/Ambra (invece di rosso)
+    factChecker: '#4169e1',   // Blu reale (invece di verde)
+    susceptible: '#808080',   // Grigio
+    eternal: '#00ced1',       // Turchese scuro
+    // Colori per il gradiente gullibility
+    lowGullibility: '#d4a017',  // Oro (sostituisce rosso)
+    highGullibility: '#4169e1'  // Blu reale
+  },
+  deuteranopia: {
+    believer: '#cd853f',      // Marrone chiaro
+    factChecker: '#4682b4',   // Blu acciaio
+    susceptible: '#778899',   // Grigio ardesia
+    eternal: '#20b2aa',       // Verde acqua
+    lowGullibility: '#cd853f',  // Marrone
+    highGullibility: '#4682b4'  // Blu acciaio
+  },
+  tritanopia: {
+    believer: '#ff1493',      // Rosa intenso
+    factChecker: '#00ced1',   // Turchese
+    susceptible: '#a9a9a9',   // Grigio scuro
+    eternal: '#ff69b4',       // Rosa chiaro
+    lowGullibility: '#ff1493',  // Rosa
+    highGullibility: '#00ced1'  // Turchese
+  },
+  achromatopsia: {
+    believer: '#2d2d2d',      // Grigio molto scuro (quasi nero)
+    factChecker: '#f0f0f0',   // Grigio molto chiaro (quasi bianco)
+    susceptible: '#808080',   // Grigio medio
+    eternal: '#c0c0c0',       // Grigio argento
+    lowGullibility: '#2d2d2d',  // Grigio scuro
+    highGullibility: '#f0f0f0'  // Grigio chiaro
+  }
+};
+
+let currentColorMode = 'normal';
+
+// Ottiene il colore in base alla modalità daltonismo attiva
+function getColorForState(stateType) {
+  const palette = COLORBLIND_PALETTES[currentColorMode] || COLORBLIND_PALETTES.normal;
+  return palette[stateType] || palette.susceptible;
+}
+
+// =============================================================================
+// SISTEMA STATISTICHE PERSISTENTI
+// Traccia e salva statistiche di gioco in localStorage
+// =============================================================================
+
+const STATS_KEY = 'hoaxGameStats';
+
+// Struttura statistiche
+function getDefaultStats() {
+  return {
+    gamesPlayed: 0,
+    gamesWon: 0,
+    gamesLost: 0,
+    believerGames: 0,
+    believerWins: 0,
+    fcGames: 0,
+    fcWins: 0,
+    powerupsUsed: {
+      fakeBurst: 0,
+      payInfluencer: 0,
+      emergencyBeliever: 0,
+      talkFriend: 0,
+      nationalDebunk: 0,
+      emergencyFC: 0
+    },
+    totalPlayTime: 0, // in secondi
+    averageGameTime: 0,
+    longestGame: 0,
+    shortestGame: Infinity,
+    firstPlayDate: Date.now(),
+    lastPlayDate: Date.now(),
+    totalTurnsPlayed: 0
+  };
+}
+
+// Carica statistiche da localStorage
+function loadStats() {
+  const saved = localStorage.getItem(STATS_KEY);
+  if (saved) {
+    try {
+      return { ...getDefaultStats(), ...JSON.parse(saved) };
+    } catch (e) {
+      console.warn('Errore caricamento statistiche:', e);
+      return getDefaultStats();
+    }
+  }
+  return getDefaultStats();
+}
+
+// Salva statistiche in localStorage
+function saveStats(stats) {
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  } catch (e) {
+    console.error('Errore salvataggio statistiche:', e);
+  }
+}
+
+// Variabile globale per tracciare tempo di gioco
+let gameStartTime = null;
+
+// Inizia tracciamento partita
+function startGameTracking() {
+  gameStartTime = Date.now();
+}
+
+// Registra uso power-up
+function trackPowerupUsage(powerupId) {
+  const stats = loadStats();
+  if (stats.powerupsUsed[powerupId] !== undefined) {
+    stats.powerupsUsed[powerupId]++;
+    saveStats(stats);
+  }
+}
+
+// Registra fine partita
+function trackGameEnd(won, team) {
+  if (!gameStartTime) return;
+  
+  const stats = loadStats();
+  const gameTime = Math.floor((Date.now() - gameStartTime) / 1000); // secondi
+  
+  stats.gamesPlayed++;
+  stats.totalTurnsPlayed += state.currentDay;
+  
+  if (won) {
+    stats.gamesWon++;
+  } else {
+    stats.gamesLost++;
+  }
+  
+  if (team === 'believer') {
+    stats.believerGames++;
+    if (won) stats.believerWins++;
+  } else if (team === 'fact_checker') {
+    stats.fcGames++;
+    if (won) stats.fcWins++;
+  }
+  
+  // Aggiorna tempi di gioco
+  stats.totalPlayTime += gameTime;
+  stats.averageGameTime = Math.floor(stats.totalPlayTime / stats.gamesPlayed);
+  stats.longestGame = Math.max(stats.longestGame, gameTime);
+  stats.shortestGame = Math.min(stats.shortestGame, gameTime);
+  stats.lastPlayDate = Date.now();
+  
+  saveStats(stats);
+  gameStartTime = null;
+  
+  console.log('📊 Statistiche aggiornate:', stats);
+}
+
+// Mostra statistiche nel modale Area Personale
+function updateStatsDisplay() {
+  const stats = loadStats();
+  
+  const winRate = stats.gamesPlayed > 0 ? 
+    Math.round((stats.gamesWon / stats.gamesPlayed) * 100) : 0;
+  
+  const believerWinRate = stats.believerGames > 0 ?
+    Math.round((stats.believerWins / stats.believerGames) * 100) : 0;
+  
+  const fcWinRate = stats.fcGames > 0 ?
+    Math.round((stats.fcWins / stats.fcGames) * 100) : 0;
+  
+  // Formatta tempo
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
+  
+  // Power-up più usato
+  const mostUsedPowerup = Object.entries(stats.powerupsUsed)
+    .sort((a, b) => b[1] - a[1])[0];
+  
+  const statsHTML = `
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 20px;">
+      <div style="background: rgba(15,23,42,0.6); padding: 16px; border-radius: 8px; border: 1px solid rgba(71,85,105,0.5);">
+        <div style="font-size: 24px; font-weight: 700; color: #5ea8ff;">${stats.gamesPlayed}</div>
+        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Partite Giocate</div>
+      </div>
+      <div style="background: rgba(15,23,42,0.6); padding: 16px; border-radius: 8px; border: 1px solid rgba(71,85,105,0.5);">
+        <div style="font-size: 24px; font-weight: 700; color: #22c55e;">${winRate}%</div>
+        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Win Rate</div>
+      </div>
+      <div style="background: rgba(239,68,68,0.1); padding: 16px; border-radius: 8px; border: 1px solid rgba(239,68,68,0.3);">
+        <div style="font-size: 20px; font-weight: 600; color: #ef4444;">${believerWinRate}%</div>
+        <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">🔴 Believer (${stats.believerWins}/${stats.believerGames})</div>
+      </div>
+      <div style="background: rgba(34,197,94,0.1); padding: 16px; border-radius: 8px; border: 1px solid rgba(34,197,94,0.3);">
+        <div style="font-size: 20px; font-weight: 600; color: #22c55e;">${fcWinRate}%</div>
+        <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">🟢 Fact-Checker (${stats.fcWins}/${stats.fcGames})</div>
+      </div>
+      <div style="grid-column: 1 / -1; background: rgba(15,23,42,0.6); padding: 16px; border-radius: 8px; border: 1px solid rgba(71,85,105,0.5);">
+        <div style="font-size: 14px; color: #e2e8f0; margin-bottom: 8px;">⏱️ <strong>Tempo Medio:</strong> ${formatTime(stats.averageGameTime)}</div>
+        <div style="font-size: 12px; color: #94a3b8;">Più lunga: ${formatTime(stats.longestGame)} • Più breve: ${stats.shortestGame === Infinity ? 'N/A' : formatTime(stats.shortestGame)}</div>
+      </div>
+      <div style="grid-column: 1 / -1; background: rgba(15,23,42,0.6); padding: 16px; border-radius: 8px; border: 1px solid rgba(71,85,105,0.5);">
+        <div style="font-size: 14px; color: #e2e8f0; margin-bottom: 8px;">⚡ <strong>Power-up Preferito:</strong></div>
+        <div style="font-size: 12px; color: #94a3b8;">${mostUsedPowerup ? `${POWERUPS[mostUsedPowerup[0]]?.name || mostUsedPowerup[0]} (${mostUsedPowerup[1]} volte)` : 'Nessuno ancora'}</div>
+      </div>
+    </div>
+  `;
+  
+  const statsContainer = document.getElementById('userStatsContainer');
+  if (statsContainer) {
+    statsContainer.innerHTML = statsHTML;
+  }
+}
+
+// =============================================================================
+// SISTEMA TUTORIAL/ONBOARDING
+// Tutorial interattivo per nuovi utenti
+// =============================================================================
+
+const TUTORIAL_KEY = 'hoaxTutorialCompleted';
+
+const TUTORIAL_STEPS = [
+  {
+    title: '👋 Benvenuto nel Simulatore di Hoax!',
+    content: `
+      <p style="font-size: 15px; color: #e2e8f0; line-height: 1.6;">
+        Questo è un gioco educativo sulla diffusione delle <strong>fake news</strong> nelle reti sociali.
+      </p>
+      <p style="font-size: 14px; color: #94a3b8; line-height: 1.6; margin-top: 16px;">
+        Imparerai come le notizie false si propagano e come contrastarle con il fact-checking.
+      </p>
+      <div style="background: rgba(94,168,255,0.1); border-left: 3px solid #5ea8ff; padding: 16px; margin-top: 20px; border-radius: 4px;">
+        <p style="font-size: 13px; color: #cbd5e1; margin: 0;">
+          💡 <strong>Obiettivo:</strong> Raggiungi il 70% di nodi dalla tua parte prima che lo facciano gli avversari o scada il tempo (51 turni).
+        </p>
+      </div>
+    `,
+    icon: '🎮'
+  },
+  {
+    title: '📰 Scegli il Tuo Lato',
+    content: `
+      <p style="font-size: 14px; color: #e2e8f0; line-height: 1.6;">
+        All'inizio riceverai una <strong>notizia</strong>. Dovrai decidere se è:
+      </p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;">
+        <div style="background: rgba(239,68,68,0.1); padding: 20px; border-radius: 8px; border: 2px solid rgba(239,68,68,0.3);">
+          <div style="font-size: 32px; margin-bottom: 8px;">🔴</div>
+          <div style="font-size: 16px; font-weight: 600; color: #ef4444; margin-bottom: 8px;">FAKE</div>
+          <div style="font-size: 12px; color: #94a3b8; line-height: 1.4;">
+            Diventerai un <strong>Believer</strong> e dovrai diffondere la fake news
+          </div>
+        </div>
+        <div style="background: rgba(34,197,94,0.1); padding: 20px; border-radius: 8px; border: 2px solid rgba(34,197,94,0.3);">
+          <div style="font-size: 32px; margin-bottom: 8px;">🟢</div>
+          <div style="font-size: 16px; font-weight: 600; color: #22c55e; margin-bottom: 8px;">VERA</div>
+          <div style="font-size: 12px; color: #94a3b8; line-height: 1.4;">
+            Diventerai un <strong>Fact-Checker</strong> e dovrai smascherare le fake
+          </div>
+        </div>
+      </div>
+    `,
+    icon: '📰'
+  },
+  {
+    title: '🕸️ La Rete Sociale',
+    content: `
+      <p style="font-size: 14px; color: #e2e8f0; line-height: 1.6; margin-bottom: 16px;">
+        Il grafo centrale rappresenta una <strong>rete sociale</strong> con 120 persone (nodi) connesse tra loro.
+      </p>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0;">
+        <div style="text-align: center; padding: 16px; background: rgba(15,23,42,0.6); border-radius: 8px;">
+          <div style="font-size: 28px; margin-bottom: 8px;">🔴</div>
+          <div style="font-size: 13px; font-weight: 600; color: #ef4444;">Believer</div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Crede nella fake</div>
+        </div>
+        <div style="text-align: center; padding: 16px; background: rgba(15,23,42,0.6); border-radius: 8px;">
+          <div style="font-size: 28px; margin-bottom: 8px;">🟢</div>
+          <div style="font-size: 13px; font-weight: 600; color: #22c55e;">Fact-Checker</div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Smaschera la fake</div>
+        </div>
+        <div style="text-align: center; padding: 16px; background: rgba(15,23,42,0.6); border-radius: 8px;">
+          <div style="font-size: 28px; margin-bottom: 8px;">⚪</div>
+          <div style="font-size: 13px; font-weight: 600; color: #94a3b8;">Susceptible</div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Non ha ancora deciso</div>
+        </div>
+      </div>
+      <div style="background: rgba(245,158,11,0.1); border-left: 3px solid #f59e0b; padding: 12px; margin-top: 16px; border-radius: 4px;">
+        <p style="font-size: 12px; color: #cbd5e1; margin: 0;">
+          ⚡ Ogni turno i nodi influenzano i loro vicini connessi da linee
+        </p>
+      </div>
+    `,
+    icon: '🕸️'
+  },
+  {
+    title: '⚡ Power-up Strategici',
+    content: `
+      <p style="font-size: 14px; color: #e2e8f0; line-height: 1.6; margin-bottom: 16px;">
+        Hai un <strong>budget di 500 crediti</strong> per usare power-up speciali che accelerano la diffusione.
+      </p>
+      <div style="display: grid; gap: 12px;">
+        <div style="background: rgba(15,23,42,0.6); padding: 12px 16px; border-radius: 8px; border-left: 3px solid #5ea8ff;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 13px; font-weight: 600; color: #5ea8ff;">💥 Fake Burst</div>
+            <div style="font-size: 12px; color: #94a3b8;">80 crediti</div>
+          </div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Converti 5 nodi Susceptible in Believer</div>
+        </div>
+        <div style="background: rgba(15,23,42,0.6); padding: 12px 16px; border-radius: 8px; border-left: 3px solid #22c55e;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 13px; font-weight: 600; color: #22c55e;">💬 Parla con Amico</div>
+            <div style="font-size: 12px; color: #94a3b8;">80 crediti</div>
+          </div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Un FC converte un vicino casuale</div>
+        </div>
+        <div style="background: rgba(15,23,42,0.6); padding: 12px 16px; border-radius: 8px; border-left: 3px solid #f59e0b;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 13px; font-weight: 600; color: #f59e0b;">🚨 EMERGENZA</div>
+            <div style="font-size: 12px; color: #94a3b8;">300 crediti</div>
+          </div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Effetto potente che dura 5 turni</div>
+        </div>
+      </div>
+      <div style="background: rgba(245,158,11,0.1); border-left: 3px solid #f59e0b; padding: 12px; margin-top: 16px; border-radius: 4px;">
+        <p style="font-size: 12px; color: #cbd5e1; margin: 0;">
+          💰 Il budget si ricarica di 50 crediti ogni 5 turni
+        </p>
+      </div>
+    `,
+    icon: '⚡'
+  },
+  {
+    title: '🎯 Pronto a Giocare!',
+    content: `
+      <p style="font-size: 15px; color: #e2e8f0; line-height: 1.6; margin-bottom: 20px;">
+        Ora sei pronto per la tua prima partita!
+      </p>
+      <div style="background: linear-gradient(135deg, rgba(94,168,255,0.2), rgba(34,197,94,0.2)); padding: 24px; border-radius: 12px; margin: 20px 0;">
+        <div style="font-size: 18px; font-weight: 700; color: #e2e8f0; margin-bottom: 12px; text-align: center;">
+          Ricorda l'obiettivo:
+        </div>
+        <div style="font-size: 32px; font-weight: 700; text-align: center; color: #5ea8ff; margin: 12px 0;">
+          70%
+        </div>
+        <div style="font-size: 13px; color: #cbd5e1; text-align: center;">
+          Raggiungi il 70% di nodi dalla tua parte<br/>prima degli avversari o del timeout (51 turni)
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
+        <div style="background: rgba(15,23,42,0.6); padding: 12px; border-radius: 8px; text-align: center;">
+          <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Usa i bottoni</div>
+          <div style="font-size: 14px; color: #5ea8ff; font-weight: 600;">➡️ Prossimo Giorno</div>
+        </div>
+        <div style="background: rgba(15,23,42,0.6); padding: 12px; border-radius: 8px; text-align: center;">
+          <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">O automatico</div>
+          <div style="font-size: 14px; color: #5ea8ff; font-weight: 600;">⏩ Simulazione</div>
+        </div>
+      </div>
+      <p style="font-size: 13px; color: #94a3b8; text-align: center; margin-top: 20px;">
+        🍀 Buona fortuna!
+      </p>
+    `,
+    icon: '🎯'
+  }
+];
+
+let currentTutorialStep = 0;
+
+// Verifica se tutorial già completato
+function shouldShowTutorial() {
+  return localStorage.getItem(TUTORIAL_KEY) !== 'true';
+}
+
+// Mostra tutorial
+function showTutorial() {
+  currentTutorialStep = 0;
+  updateTutorialContent();
+  openModal('#tutorialModal');
+}
+
+// Aggiorna contenuto tutorial
+function updateTutorialContent() {
+  const step = TUTORIAL_STEPS[currentTutorialStep];
+  const content = document.getElementById('tutorialContent');
+  
+  if (content) {
+    content.innerHTML = `
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="font-size: 64px; margin-bottom: 16px;">${step.icon}</div>
+        <h3 style="font-size: 24px; color: #e2e8f0; margin: 0;">${step.title}</h3>
+      </div>
+      ${step.content}
+    `;
+  }
+  
+  // Aggiorna contatori
+  document.getElementById('tutorialStep').textContent = currentTutorialStep + 1;
+  document.getElementById('tutorialTotal').textContent = TUTORIAL_STEPS.length;
+  
+  // Aggiorna bottoni
+  const btnPrev = document.getElementById('btnTutorialPrev');
+  const btnNext = document.getElementById('btnTutorialNext');
+  
+  if (btnPrev) {
+    btnPrev.disabled = currentTutorialStep === 0;
+  }
+  
+  if (btnNext) {
+    if (currentTutorialStep === TUTORIAL_STEPS.length - 1) {
+      btnNext.textContent = '✓ Inizia a Giocare!';
+      btnNext.classList.add('primary');
+    } else {
+      btnNext.textContent = 'Avanti →';
+    }
+  }
+}
+
+// Naviga tutorial
+function nextTutorialStep() {
+  if (currentTutorialStep < TUTORIAL_STEPS.length - 1) {
+    currentTutorialStep++;
+    updateTutorialContent();
+  } else {
+    completeTutorial();
+  }
+}
+
+function prevTutorialStep() {
+  if (currentTutorialStep > 0) {
+    currentTutorialStep--;
+    updateTutorialContent();
+  }
+}
+
+// Chiude tutorial
+function closeTutorial() {
+  closeModal('#tutorialModal');
+}
+
+// Salta tutorial
+function skipTutorial() {
+  completeTutorial();
+}
+
+// Completa tutorial
+function completeTutorial() {
+  localStorage.setItem(TUTORIAL_KEY, 'true');
+  closeModal('#tutorialModal');
+  showToast('🎉 Tutorial completato! Buona partita!');
+}
+
+// =============================================================================
+// SISTEMA DI GESTIONE UTENTE E SALVATAGGIO PARTITE
+// =============================================================================
+
+// Carica i dati utente dal localStorage
+function loadUserData() {
+  const userData = localStorage.getItem('currentUser');
+  if (userData) {
+    currentUser = JSON.parse(userData);
+    updateUserAreaDisplay();
+  }
+}
+
+// Aggiorna la visualizzazione dell'area personale
+function updateUserAreaDisplay() {
+  if (currentUser) {
+    $("#loginSection").style.display = "none";
+    $("#userDataSection").style.display = "block";
+    $("#userName").textContent = currentUser.name || currentUser.email;
+    
+    // Carica statistiche
+    const stats = currentUser.stats || { gamesPlayed: 0, gamesWon: 0, believerWins: 0, fcWins: 0 };
+    $("#statGamesPlayed").textContent = stats.gamesPlayed;
+    $("#statGamesWon").textContent = stats.gamesWon;
+    $("#statBelieverWins").textContent = stats.believerWins;
+    $("#statFCWins").textContent = stats.fcWins;
+    
+    // Carica partite salvate
+    loadSavedGamesList();
+  } else {
+    $("#loginSection").style.display = "block";
+    $("#userDataSection").style.display = "none";
+  }
+}
+
+// Gestisce il login (simulato - in produzione usare API)
+function handleLogin() {
+  const email = $("#loginEmail").value.trim();
+  const password = $("#loginPassword").value.trim();
+  
+  if (!email || !password) {
+    showToast("Inserisci email e password");
+    return;
+  }
+  
+  // Simulazione login (in produzione: chiamata API)
+  currentUser = {
+    email: email,
+    name: email.split('@')[0],
+    provider: 'email',
+    stats: {
+      gamesPlayed: 0,
+      gamesWon: 0,
+      believerWins: 0,
+      fcWins: 0
+    },
+    savedGames: []
+  };
+  
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  updateUserAreaDisplay();
+  showToast(`Benvenuto, ${currentUser.name}!`);
+}
+
+// Gestisce il login con Google
+function handleGoogleLogin() {
+  showToast("🔄 Connessione con Google...");
+  
+  // Simulazione OAuth Google (in produzione: usa Firebase Auth o OAuth 2.0)
+  setTimeout(() => {
+    currentUser = {
+      email: "user@gmail.com",
+      name: "Utente Google",
+      provider: 'google',
+      stats: {
+        gamesPlayed: 0,
+        gamesWon: 0,
+        believerWins: 0,
+        fcWins: 0
+      },
+      savedGames: []
+    };
+    
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    updateUserAreaDisplay();
+    showToast(`✅ Connesso con Google come ${currentUser.name}!`);
+  }, 1000);
+}
+
+// Gestisce il login con GitHub
+function handleGithubLogin() {
+  showToast("🔄 Connessione con GitHub...");
+  
+  // Simulazione OAuth GitHub (in produzione: usa GitHub OAuth App)
+  setTimeout(() => {
+    currentUser = {
+      email: "user@github.com",
+      name: "Utente GitHub",
+      provider: 'github',
+      stats: {
+        gamesPlayed: 0,
+        gamesWon: 0,
+        believerWins: 0,
+        fcWins: 0
+      },
+      savedGames: []
+    };
+    
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    updateUserAreaDisplay();
+    showToast(`✅ Connesso con GitHub come ${currentUser.name}!`);
+  }, 1000);
+}
+
+// Gestisce il logout
+function handleLogout() {
+  currentUser = null;
+  localStorage.removeItem('currentUser');
+  updateUserAreaDisplay();
+  showToast("Disconnesso con successo");
+}
+
+// Salva la partita corrente
+function saveCurrentGame() {
+  if (!currentUser) {
+    showToast("Devi effettuare il login per salvare le partite");
+    return;
+  }
+  
+  const gameSave = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    day: state.currentDay,
+    playerTeam: playerTeam,
+    nodes: state.nodes,
+    links: state.links,
+    daily: state.daily,
+    stats: {
+      believers: state.nodes.filter(n => n.scientificState === 'B').length,
+      factCheckers: state.nodes.filter(n => n.scientificState === 'FC').length,
+      susceptibles: state.nodes.filter(n => n.scientificState === 'S').length
+    }
+  };
+  
+  if (!currentUser.savedGames) currentUser.savedGames = [];
+  currentUser.savedGames.push(gameSave);
+  
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  loadSavedGamesList();
+  showToast("Partita salvata con successo!");
+}
+
+// Carica la lista delle partite salvate
+function loadSavedGamesList() {
+  const container = $("#savedGamesList");
+  if (!currentUser || !currentUser.savedGames || currentUser.savedGames.length === 0) {
+    container.innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 20px;">Nessuna partita salvata</p>';
+    return;
+  }
+  
+  container.innerHTML = currentUser.savedGames.map(game => {
+    const date = new Date(game.date).toLocaleString('it-IT');
+    const teamIcon = game.playerTeam === 'believer' ? '🔴' : '🟢';
+    return `
+      <div style="background: #f8fafc; padding: 12px; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-weight: 600; color: #1e293b;">${teamIcon} Partita - Giorno ${game.day}/7</div>
+          <div style="font-size: 12px; color: #64748b;">${date}</div>
+        </div>
+        <button class="ghost" onclick="loadSavedGame(${game.id})" style="font-size: 12px; padding: 6px 12px;">Carica</button>
+      </div>
+    `;
+  }).join('');
+}
+
+// Carica una partita salvata
+window.loadSavedGame = function(gameId) {
+  const game = currentUser.savedGames.find(g => g.id === gameId);
+  if (!game) return;
+  
+  state.currentDay = game.day;
+  state.nodes = game.nodes;
+  state.links = game.links;
+  state.daily = game.daily;
+  playerTeam = game.playerTeam;
+  
+  renderGraph();
+  updateKPI();
+  closeModal("#userAreaModal");
+  showToast("Partita caricata!");
+};
+
+// Mostra una notizia casuale dal database
+function showNewsChoice() {
+  currentNews = NEWS_DATABASE[Math.floor(Math.random() * NEWS_DATABASE.length)];
+  
+  $("#newsTitle").textContent = currentNews.title.toUpperCase();
+  $("#newsText").textContent = currentNews.text;
+  $("#newsSource").textContent = currentNews.source.toUpperCase();
+  
+  openModal("#newsChoiceModal");
+}
+
+// Gestisce la scelta dell'utente
+async function handleNewsChoice(userChoice) {
+  // userChoice: 'fake' o 'truth'
+  const correct = (userChoice === 'fake' && currentNews.isFake) || 
+                  (userChoice === 'truth' && !currentNews.isFake);
+  
+  if (userChoice === 'fake') {
+    playerTeam = 'believer';
+    showToast(`Hai scelto FAKE! Interpreterai il team dei Believer 🔴`);
+  } else {
+    playerTeam = 'fact_checker';
+    showToast(`Hai scelto VERA! Interpreterai il team dei Fact-Checker 🟢`);
+  }
+  
+  closeModal("#newsChoiceModal");
+  
+  // Avvia la simulazione
+  await initializeGame();
+}
+
+// =============================================================================
+// FUNZIONI GESTIONE POWER-UPS
+// =============================================================================
+
+// Mostra i power-up del team selezionato
+function showTeamPowerups() {
+  console.log("🎮 showTeamPowerups chiamato - playerTeam:", playerTeam, "selectedMode:", selectedMode);
+  
+  // Se siamo in modalità simulazione, nascondi tutti i power-up
+  if (selectedMode === "simulazione") {
+    const panel = $("#teamPowerupsPanel");
+    if (panel) {
+      panel.style.display = "none";
+    }
+    console.log("🔬 Modalità simulazione: power-up nascosti");
+    return;
+  }
+  
+  const panel = $("#teamPowerupsPanel");
+  const believerPowerups = $("#believerPowerups");
+  const fcPowerups = $("#factCheckerPowerups");
+  
+  if (!panel || !believerPowerups || !fcPowerups) {
+    console.error("❌ Elementi power-up non trovati nel DOM");
+    return;
+  }
+  
+  // Nascondi il messaggio di benvenuto iniziale
+  const welcomeDiv = document.querySelector("#gameBasePanel > div[style*='min-height: 400px']");
+  if (welcomeDiv) {
+    welcomeDiv.style.display = "none";
+  }
+  
+  panel.style.display = "block";
+  
+  if (playerTeam === 'believer') {
+    believerPowerups.style.display = "block";
+    fcPowerups.style.display = "none";
+    console.log("✅ Mostrati power-up Believer");
+  } else if (playerTeam === 'fact_checker') {
+    believerPowerups.style.display = "none";
+    fcPowerups.style.display = "block";
+    console.log("✅ Mostrati power-up Fact-Checker");
+  }
+  
+  updateBudgetDisplay();
+  updatePowerupButtons();
+}
+
+// Aggiorna display budget
+function updateBudgetDisplay() {
+  // In modalità simulazione non mostrare il budget
+  if (selectedMode === "simulazione") {
+    return;
+  }
+  
+  $("#playerBudget").textContent = playerState.budget;
+  const turnsLeft = playerState.budgetRechargeTurns - playerState.budgetRechargeCounter;
+  $("#budgetRechargeTimer").textContent = turnsLeft > 0 ? `${turnsLeft} turni` : "Pronto!";
+}
+
+// Attiva un power-up
+function activatePowerup(powerupId) {
+  const powerup = POWERUPS[powerupId];
+  
+  if (!powerup) {
+    console.error(`Power-up ${powerupId} non trovato`);
+    return;
+  }
+  
+  // Verifica team
+  if (powerup.team !== playerTeam) {
+    showToast("⚠️ Questo power-up non è disponibile per il tuo team!");
+    return;
+  }
+  
+  // Verifica budget
+  if (playerState.budget < powerup.cost) {
+    showToast("💰 Budget insufficiente!");
+    return;
+  }
+  
+  // Verifica se già attivo
+  const alreadyActive = playerState.activePowerups.find(p => p.id === powerupId);
+  if (alreadyActive) {
+    showToast("⚠️ Power-up già attivo!");
+    return;
+  }
+  
+  // Sottrai costo
+  playerState.budget -= powerup.cost;
+  
+  // Traccia uso power-up
+  trackPowerupUsage(powerupId);
+  
+  // Aggiungi ai power-up attivi
+  const effect = powerup.apply();
+  playerState.activePowerups.push({
+    id: powerupId,
+    name: powerup.name,
+    turnsLeft: powerup.duration,
+    effect: effect
+  });
+  
+  // Gestione effetti immediati
+  if (effect.instantConversion) {
+    convertRandomNeighborToFC();
+  }
+  
+  // Effetto iniziale (per power-up EMERGENZA)
+  if (effect.initialEffect) {
+    applyPowerupEffect(effect.initialEffect);
+  }
+  
+  // Effetto conversione forzata (per Fake Burst)
+  if (effect.forceConvert) {
+    applyPowerupEffect(effect.forceConvert);
+  }
+  
+  showToast(`✅ ${powerup.name} attivato!`);
+  updateBudgetDisplay();
+  updateActivePowerupsDisplay();
+  updatePowerupButtons();
+}
+
+// Converti un vicino casuale in Fact-Checker (per "Parla con un Amico")
+function convertRandomNeighborToFC() {
+  // Trova tutti i nodi FC del giocatore
+  const fcNodes = state.nodes.filter(n => n.scientificState === 'FC');
+  if (fcNodes.length === 0) return;
+  
+  // Scegli un FC casuale
+  const randomFC = fcNodes[Math.floor(Math.random() * fcNodes.length)];
+  
+  // Trova tutti i vicini Susceptible o Believer
+  const neighbors = state.links
+    .filter(l => l.source.id === randomFC.id || l.target.id === randomFC.id)
+    .map(l => l.source.id === randomFC.id ? l.target : l.source)
+    .filter(n => n.scientificState !== 'FC');
+  
+  if (neighbors.length === 0) {
+    showToast("ℹ️ Nessun vicino da convertire");
+    return;
+  }
+  
+  // Converti un vicino casuale
+  const targetNode = neighbors[Math.floor(Math.random() * neighbors.length)];
+  targetNode.scientificState = 'FC';
+  targetNode.role = 'fact_checker';
+  targetNode.memory = 'truth';
+  
+  // Aggiorna visualizzazione
+  if (typeof gNodes !== 'undefined') {
+    gNodes.selectAll("path")
+      .filter(d => d.id === targetNode.id)
+      .attr('fill', nodeColor(targetNode));
+  }
+  
+  updateKPI();
+  showToast(`💬 Convertito nodo #${targetNode.id} in Fact-Checker!`);
+}
+
+// Applica effetto power-up sui nodi
+function applyPowerupEffect(effect) {
+  const { target, count, from, percentage } = effect;
+  
+  console.log(`⚡ Applicazione effetto: ${from}→${target}, count: ${count}, percentage: ${percentage}`);
+  
+  // Trova nodi sorgente
+  let sourceNodes = state.nodes.filter(n => n.scientificState === from);
+  
+  console.log(`📊 Nodi ${from} disponibili: ${sourceNodes.length}`);
+  
+  if (sourceNodes.length === 0) {
+    console.log("⚠️ Nessun nodo da convertire");
+    showToast(`⚠️ Nessun nodo ${from} disponibile`);
+    return;
+  }
+  
+  // Calcola quanti nodi convertire
+  let nodesToConvert = percentage ? 
+    Math.floor(sourceNodes.length * count) : 
+    Math.min(count, sourceNodes.length);
+  
+  console.log(`🎯 Nodi da convertire: ${nodesToConvert}`);
+  
+  // Shuffle e prendi i primi N nodi
+  const shuffled = sourceNodes.sort(() => 0.5 - Math.random());
+  const selected = shuffled.slice(0, nodesToConvert);
+  
+  // Converti i nodi con animazione
+  selected.forEach(node => {
+    const oldState = node.scientificState;
+    node.scientificState = target;
+    node.role = target === 'B' ? 'believer' : 
+                target === 'FC' ? 'fact_checker' : 
+                'susceptible';
+    node.memory = target === 'B' ? 'fake' : 
+                  target === 'FC' ? 'truth' : 
+                  'neutral';
+    
+    console.log(`  ✓ Nodo ${node.id}: ${oldState} → ${target}`);
+    
+    // Animazione flash sul nodo
+    animateNodePowerup(node.id, target);
+  });
+  
+  // Aggiorna visualizzazione
+  if (typeof gNodes !== 'undefined') {
+    gNodes.selectAll("path")
+      .attr("d", d => {
+        // Aggiorna forma in base allo stato
+        if (d.scientificState === 'S' || d.role === 'susceptible') {
+          return d3.symbol().type(d3.symbolCircle).size(100)();
+        } else if (d.scientificState === 'B' || d.role === 'believer') {
+          return d3.symbol().type(d3.symbolSquare).size(100)();
+        } else if (d.scientificState === 'FC' || d.role === 'fact_checker') {
+          return d3.symbol().type(d3.symbolDiamond).size(100)();
+        }
+      });
+  }
+  
+  updateKPI();
+  
+  const targetName = target === 'B' ? 'Believer' : target === 'FC' ? 'Fact-Checker' : 'Susceptible';
+  showToast(`⚡ Convertiti ${nodesToConvert} nodi in ${targetName}!`);
+  console.log(`✅ Conversione completata: ${nodesToConvert} nodi ${from}→${target}`);
+}
+
+// Animazione flash sui nodi affetti da power-up
+function animateNodePowerup(nodeId, targetState) {
+  if (typeof gNodes === 'undefined') return;
+  
+  const nodeSelection = gNodes.selectAll("path").filter(d => d.id === nodeId);
+  
+  if (nodeSelection.empty()) return;
+  
+  // Flash animation con colore in base al target
+  const flashColor = targetState === 'B' ? '#fbbf24' : 
+                     targetState === 'FC' ? '#22c55e' : 
+                     '#94a3b8';
+  
+  nodeSelection
+    .transition().duration(150)
+    .attr('stroke', flashColor)
+    .attr('stroke-width', 4)
+    .transition().duration(150)
+    .attr('stroke', flashColor)
+    .attr('stroke-width', 6)
+    .transition().duration(300)
+    .attr('stroke', 'rgba(0,0,0,0.3)')
+    .attr('stroke-width', 1);
+  
+  // Particelle esplosive
+  createParticles(nodeSelection.datum(), flashColor);
+  
+  // Suono feedback (se audio attivo)
+  playPowerupSound(targetState);
+}
+
+// Crea effetto particelle esplosive
+function createParticles(node, color) {
+  if (!node.x || !node.y) return;
+  
+  const particleCount = 8;
+  const particles = [];
+  
+  for (let i = 0; i < particleCount; i++) {
+    const angle = (Math.PI * 2 * i) / particleCount;
+    const particle = svg.append('circle')
+      .attr('cx', node.x)
+      .attr('cy', node.y)
+      .attr('r', 3)
+      .attr('fill', color)
+      .attr('opacity', 0.8);
+    
+    particle
+      .transition()
+      .duration(600)
+      .ease(d3.easeQuadOut)
+      .attr('cx', node.x + Math.cos(angle) * 30)
+      .attr('cy', node.y + Math.sin(angle) * 30)
+      .attr('r', 0)
+      .attr('opacity', 0)
+      .remove();
+  }
+}
+
+// Riproduce suono feedback power-up
+function playPowerupSound(targetState) {
+  // Verifica se audio è attivo
+  const audioEnabled = localStorage.getItem('audioEnabled') !== 'false';
+  if (!audioEnabled) return;
+  
+  // Crea oscillatore per suono sintetico
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  
+  // Frequenze diverse per stati diversi
+  const frequency = targetState === 'B' ? 440 : 
+                   targetState === 'FC' ? 554 : 
+                   330;
+  
+  oscillator.frequency.value = frequency;
+  oscillator.type = 'sine';
+  
+  gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+  
+  oscillator.start(audioContext.currentTime);
+  oscillator.stop(audioContext.currentTime + 0.2);
+}
+
+// Aggiorna display power-up attivi
+function updateActivePowerupsDisplay() {
+  const display = $("#activePowerupsDisplay");
+  const list = $("#activePowerupsList");
+  
+  if (playerState.activePowerups.length === 0) {
+    display.style.display = "none";
+    return;
+  }
+  
+  display.style.display = "block";
+  list.innerHTML = playerState.activePowerups.map(p => 
+    `<div>• ${p.name} (${p.turnsLeft} turni rimasti)</div>`
+  ).join('');
+}
+
+// Aggiorna stato bottoni power-up (disabilita se già attivi o budget insufficiente)
+function updatePowerupButtons() {
+  // In modalità simulazione non aggiornare i bottoni power-up
+  if (selectedMode === "simulazione") {
+    return;
+  }
+  
+  // Mapping manuale degli ID (perché i nomi non seguono una convenzione uniforme)
+  const buttonMap = {
+    fakeBurst: 'btnFakeBurst',
+    payInfluencer: 'btnPayInfluencer',
+    emergencyBeliever: 'btnEmergencyBeliever',
+    talkFriend: 'btnTalkFriend',
+    nationalDebunk: 'btnNationalDebunk',
+    emergencyFC: 'btnEmergencyFC'
+  };
+  
+  Object.keys(POWERUPS).forEach(powerupId => {
+    const btnId = buttonMap[powerupId];
+    if (!btnId) return;
+    
+    const btn = $(`#${btnId}`);
+    if (!btn) return;
+    
+    const powerup = POWERUPS[powerupId];
+    const canAfford = playerState.budget >= powerup.cost;
+    const alreadyActive = playerState.activePowerups.find(p => p.id === powerupId);
+    
+    btn.disabled = !canAfford || alreadyActive;
+  });
+}
+
+// Decrementa durata power-up attivi e rimuovi quelli scaduti
+function updateActivePowerups() {
+  // In modalità simulazione non aggiornare i power-up
+  if (selectedMode === "simulazione") {
+    return;
+  }
+  
+  console.log(`🎮 updateActivePowerups - Power-up attivi: ${playerState.activePowerups.length}`);
+  
+  playerState.activePowerups.forEach(p => {
+    console.log(`  ⚡ ${p.name} - Turni rimasti: ${p.turnsLeft}`);
+    
+    // Applica effetto per turno prima di decrementare
+    if (p.effect.convertPerTurn) {
+      console.log(`  🔄 Applicazione effetto per turno di: ${p.name}`);
+      applyPowerupEffect(p.effect.convertPerTurn);
+    }
+  });
+  
+  playerState.activePowerups = playerState.activePowerups.filter(p => {
+    p.turnsLeft--;
+    if (p.turnsLeft <= 0) {
+      showToast(`⏱️ ${p.name} è scaduto`);
+      console.log(`⏱️ Power-up scaduto: ${p.name}`);
+      return false;
+    }
+    return true;
+  });
+  
+  updateActivePowerupsDisplay();
+  updatePowerupButtons();
+}
+
+// Aggiorna contatore ricarica budget
+function updateBudgetRecharge() {
+  // In modalità simulazione non aggiornare il budget
+  if (selectedMode === "simulazione") {
+    return;
+  }
+  
+  playerState.budgetRechargeCounter++;
+  
+  if (playerState.budgetRechargeCounter >= playerState.budgetRechargeTurns) {
+    playerState.budget += 150; // Ricarica di 150 ogni 3 turni
+    playerState.budgetRechargeCounter = 0;
+    showToast("💰 Budget ricaricato! +150");
+  }
+  
+  updateBudgetDisplay();
+}
+
+// Calcola il totale di power-up usati
+function calculatePowerupsUsed() {
+  // Traccia il numero di power-up usati (500 budget iniziale - budget attuale - ricariche)
+  const recharges = Math.floor(state.currentDay / playerState.budgetRechargeTurns) * 150;
+  const totalAvailable = 500 + recharges;
+  const spent = totalAvailable - playerState.budget;
+  
+  // Stima numero di power-up (media costo ~150)
+  return Math.floor(spent / 150);
+}
+
+// Mostra modale di fine gioco con risultati
+function showGameEndModal(victory, reason, stats) {
+  const modal = document.createElement('div');
+  modal.className = 'modal show';
+  modal.id = 'gameEndModal';
+  modal.style.cssText = 'display: flex; align-items: center; justify-content: center;';
+  
+  const emoji = victory ? '🎉' : '😔';
+  const title = victory ? 'VITTORIA!' : 'SCONFITTA';
+  const color = victory ? '#22c55e' : '#ef4444';
+  const teamName = playerTeam === 'believer' ? 'Believer 🔴' : 'Fact-Checker 🟢';
+  
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width: 600px; text-align: center;">
+      <div style="font-size: 80px; margin-bottom: 20px;">${emoji}</div>
+      <h2 style="font-size: 48px; color: ${color}; margin: 0 0 16px 0; font-weight: 800; text-shadow: 0 2px 12px ${color}50;">
+        ${title}
+      </h2>
+      <div style="font-size: 18px; color: #cbd5e1; margin-bottom: 32px;">
+        ${reason}
+      </div>
+      
+      <div style="background: rgba(15,23,42,0.6); border-radius: 16px; padding: 24px; margin-bottom: 24px;">
+        <div style="font-size: 14px; color: #94a3b8; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px;">
+          Statistiche Partita
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div style="background: rgba(239,68,68,0.1); padding: 16px; border-radius: 12px; border: 1px solid rgba(239,68,68,0.3);">
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Believer</div>
+            <div style="font-size: 32px; font-weight: 800; color: #ef4444;">${stats.believerPerc}%</div>
+          </div>
+          
+          <div style="background: rgba(34,197,94,0.1); padding: 16px; border-radius: 12px; border: 1px solid rgba(34,197,94,0.3);">
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Fact-Checker</div>
+            <div style="font-size: 32px; font-weight: 800; color: #22c55e;">${stats.fcPerc}%</div>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; font-size: 14px;">
+          <div>
+            <div style="color: #64748b;">Il tuo team</div>
+            <div style="color: #e2e8f0; font-weight: 600; margin-top: 4px;">${teamName}</div>
+          </div>
+          <div>
+            <div style="color: #64748b;">Turni giocati</div>
+            <div style="color: #e2e8f0; font-weight: 600; margin-top: 4px;">${stats.turns}/${CONST.MAX_TURNS}</div>
+          </div>
+          <div>
+            <div style="color: #64748b;">Budget speso</div>
+            <div style="color: #e2e8f0; font-weight: 600; margin-top: 4px;">${stats.budgetSpent}💰</div>
+          </div>
+        </div>
+      </div>
+      
+      <div style="display: flex; gap: 12px; justify-content: center;">
+        <button onclick="closeGameEndModal(); location.reload();" class="primary" style="padding: 16px 32px; font-size: 16px; font-weight: 600;">
+          🔄 Nuova Partita
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Play sound effect (se disponibile)
+  if (victory) {
+    showToast('🎉 HAI VINTO!');
+  } else {
+    showToast('😔 Hai perso...');
+  }
+}
+
+// Chiudi modale fine gioco
+function closeGameEndModal() {
+  const modal = document.getElementById('gameEndModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+// Calcola i moltiplicatori dai power-up attivi
+// Fix: Definisci renderAchievementsUI se non esiste, per evitare ReferenceError
+if (typeof window.renderAchievementsUI !== 'function') {
+  window.renderAchievementsUI = function() {};
+}
+
+// =============================================================================
+// INIZIALIZZAZIONE APPLICAZIONE
+// Carica le impostazioni salvate e i dati utente
+// =============================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // Mostra tutorial per nuovi utenti o se richiesto via URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const forceTutorial = urlParams.get('tutorial') === 'true';
+  
+  if (shouldShowTutorial() || forceTutorial) {
+    setTimeout(() => showTutorial(), 500);
+  }
+  
+  // Event listeners tutorial
+  document.getElementById('btnTutorialNext')?.addEventListener('click', nextTutorialStep);
+  document.getElementById('btnTutorialPrev')?.addEventListener('click', prevTutorialStep);
+  document.getElementById('btnSkipTutorial')?.addEventListener('click', skipTutorial);
+  
+  // Carica impostazioni accessibilità
+  const highContrast = localStorage.getItem("highContrast") === "true";
+  const largeText = localStorage.getItem("largeText") === "true";
+  const reduceMotion = localStorage.getItem("reduceMotion") === "true";
+  
+  if (highContrast) {
+    document.body.classList.add("high-contrast");
+    if ($("#highContrastMode")) $("#highContrastMode").checked = true;
+  }
+  if (largeText) {
+    document.body.classList.add("large-text");
+    if ($("#largeTextMode")) $("#largeTextMode").checked = true;
+  }
+  if (reduceMotion) {
+    document.body.classList.add("reduce-motion");
+    if ($("#reduceMotionMode")) $("#reduceMotionMode").checked = true;
+  }
+  
+  // Carica impostazioni audio
+  const soundEnabled = localStorage.getItem("soundEnabled") !== "false";
+  const volume = localStorage.getItem("volume") || "70";
+  if ($("#soundEnabled")) $("#soundEnabled").checked = soundEnabled;
+  if ($("#volumeSlider")) $("#volumeSlider").value = volume;
+  
+  // Carica e applica modalità daltonismo
+  const colorblindSelector = document.getElementById('colorblindMode');
+  if (colorblindSelector) {
+    const savedMode = localStorage.getItem('colorblindMode') || 'normal';
+    colorblindSelector.value = savedMode;
+    currentColorMode = savedMode;
+    
+    colorblindSelector.addEventListener('change', () => {
+      currentColorMode = colorblindSelector.value;
+      localStorage.setItem('colorblindMode', currentColorMode);
+      
+      // Ricolorazione immediata di tutti i nodi
+      if (state && state.nodes) {
+        // Usa gNodes.selectAll("path") per selezionare tutti i path dei nodi
+        if (typeof gNodes !== 'undefined') {
+          gNodes.selectAll("path")
+            .attr('fill', d => nodeColor(d));
+        }
+        
+        // Aggiorna anche la legenda
+        d3.select('#legend-eternal').attr('fill', getColorForState('eternal'));
+      }
+    });
+  }
+  
+  // Carica dati utente
+  loadUserData();
+});
+
+// =============================================================================
 // COSTANTI GLOBALI DEL SISTEMA
 // Parametri invarianti che definiscono i vincoli temporali e le soglie
 // del modello di simulazione epidemiologica della disinformazione.
 // =============================================================================
 const CONST = {
-  DAYS: 7,
+  DAYS: 999, // Nessun limite fisso - usa stop automatico o manuale
   FORGET_DAYS: 3,
   NEIGHBOR_THR: 0.4,
-  SOURCES: { Facebook:0.7, Fanpage:0.6, AIFA:1.0, Reuters:0.95, BlogX:0.35 }
+  SOURCES: { Facebook:0.7, Fanpage:0.6, AIFA:1.0, Reuters:0.95, BlogX:0.35 },
+  // Condizioni di stop automatico
+  CONVERGENCE_STEPS: 3, // Nessun cambiamento per N step consecutivi
+  SATURATION_THRESHOLD: 0.85, // 85% di dominanza = stop
+  // Condizioni vittoria per modalità "Scegli il Lato"
+  WIN_PERCENTAGE: 0.70, // 70% per vincere
+  MAX_TURNS: 51 // Limite massimo di turni
 };
 
 // =============================================================================
@@ -211,6 +1647,13 @@ const state = {
   daily: [],
   timeline: [],
   chart: null,
+  // Tracking per stop automatico
+  simulation: {
+    running: false,
+    stepsWithoutChanges: 0,
+    previousStateHash: null,
+    manualStop: false
+  },
   scientificModel: {
     enabled: false,  // Attiva il modello scientifico S-B-F
     segregationMetrics: {}  // Metriche di segregazione rete
@@ -261,45 +1704,34 @@ function rndNormal(m=0.5,s=0.2){let u=0,v=0;while(!u)u=Math.random();while(!v)v=
 
 // =============================================================================
 // COSTRUZIONE E INIZIALIZZAZIONE DEL GRAFO
-// Funzione asincrona che carica la struttura del grafo dal file JSON locale
-// e la invia all'API backend per l'inizializzazione della simulazione.
-// I parametri del modello epidemiologico (alpha, beta, p_v, p_f) sono
-// determinati esclusivamente dall'API in base alla modalita selezionata.
+// Funzione asincrona che genera il grafo direttamente dall'API backend.
+// Il grafo viene creato con un numero di nodi adatto alla visualizzazione
+// e i parametri del modello epidemiologico (alpha, beta, p_v, p_f) sono
+// determinati dall'API in base alla modalita selezionata.
 // =============================================================================
-async function buildGraph(N=336, useScientificModel=false){
+
+// Configurazione del numero di nodi per la visualizzazione
+const GRAPH_CONFIG = {
+  numNodes: 120,     // Numero di nodi
+  avgDegree: 5,    // Grado medio per comunità ben separate
+  clustered: true    // Abilita clustering per comunità visibili
+};
+
+async function buildGraph(N=50, useScientificModel=false){
   try {
-    // Aspetta che graph.json sia caricato
-    if (!graphDataReady || !graphData) {
-      console.log('In attesa del caricamento di graph.json...');
-      await new Promise(resolve => {
-        const checkInterval = setInterval(() => {
-          if (graphDataReady && graphData) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-      });
-    }
+    // Modalità fissa: "Scegli il Lato" usa sempre modalità "libera" dell'API
+    const apiMode = "libera";
 
-    // Mappa modalità UI → modalità API
-    const modeMap = {
-      "Strategica": "strategica",
-      "Competitiva": "competitiva", 
-      "Libera": "libera"
-    };
-    
-    const apiMode = modeMap[selectedMode] || "libera";
-    
-    // Passa SOLO la modalità - TUTTI i parametri vengono dall'API!
-    const simParams = {
-      mode: apiMode
-    };
+    console.log(`🎮 Modalità: Scegli il Lato - API mode: ${apiMode}`);
+    console.log(`📊 Generazione grafo: ${GRAPH_CONFIG.numNodes} nodi, grado medio: ${GRAPH_CONFIG.avgDegree}`);
 
-    console.log(`Modalita selezionata: ${selectedMode} - API mode: ${simParams.mode}`);
-    console.log(`Parametri delegati all'API (mode: ${apiMode})`);
-
-    // Carica IL TUO graph.json nell'API (stesso grafo del sito!)
-    const apiResponse = await hoaxClient.loadGraph(graphData, simParams);
+    // Genera il grafo direttamente dall'API invece di caricare graph.json
+    const apiResponse = await hoaxClient.generateGraph(
+      apiMode, 
+      GRAPH_CONFIG.numNodes, 
+      GRAPH_CONFIG.avgDegree, 
+      GRAPH_CONFIG.clustered
+    );
 
     // Calcola le statistiche dagli stati dei nodi ricevuti dall'API
     const nodeStates = apiResponse.node_states;
@@ -319,11 +1751,16 @@ async function buildGraph(N=336, useScientificModel=false){
     state.nodes = Object.entries(apiResponse.node_states).map(([nodeId, nodeState]) => ({
       id: parseInt(nodeId),
       scientificState: nodeState, // S, B, FC
-      role: nodeState === 'FC' ? 'fact_checker' : (nodeState === 'B' ? 'credulone' : 'neutral'),
-      community: apiResponse.gullibility && apiResponse.gullibility[parseInt(nodeId)] > 0.5 ? 'gullible' : 'skeptic',
-      memory: nodeState === 'B' ? 'fake' : (nodeState === 'FC' ? 'truth' : 'neutral'),
+      // Only roles: believer, fact_checker, susceptible
+      role: nodeState === 'FC' ? 'fact_checker' : (nodeState === 'B' ? 'believer' : 'susceptible'),
+      // Gullibility tra 0.1 e 1 (se non fornita dall'API, random per demo)
+      gullibility: apiResponse.gullibility && typeof apiResponse.gullibility[parseInt(nodeId)] === 'number'
+        ? apiResponse.gullibility[parseInt(nodeId)]
+        : (0.1 + 0.9 * Math.random()),
       memoryTime: 0,
-      susceptibility: 0.5,
+      susceptibility: apiResponse.gullibility && typeof apiResponse.gullibility[parseInt(nodeId)] === 'number'
+        ? apiResponse.gullibility[parseInt(nodeId)]
+        : (0.1 + 0.9 * Math.random()),
       isEternalFC: false
     }));
 
@@ -370,10 +1807,27 @@ async function buildGraph(N=336, useScientificModel=false){
 // secondo la convenzione visiva del modello SBF (Susceptible-Believer-FactChecker).
 // =============================================================================
 function colorFill(d){ 
-  // Lo stato scientifico determina univocamente il colore del nodo
-  if (d.scientificState === 'B') return "#ff4757";      // Rosso: Believer (diffusore di disinformazione)
-  if (d.scientificState === 'FC') return "#2ed573";     // Verde: Fact-Checker (verificatore)
-  return "#c0c8d8";                                     // Grigio: Susceptible (suscettibile)
+  // Color by gullibility: 1=blue, 0.5=white, 0.01=red
+  let gull = typeof d.gullibility === 'number' ? d.gullibility : 0.5;
+  gull = Math.max(0.01, Math.min(1, gull));
+  function interpColor(val) {
+    if (val >= 0.5) {
+      // White (255,255,255) to Blue (0,0,255) as val goes from 0.5 to 1
+      const t = (val - 0.5) / (1 - 0.5);
+      const r = Math.round(255 * (1 - t));
+      const g = Math.round(255 * (1 - t));
+      const b = 255;
+      return `rgb(${r},${g},${b})`;
+    } else {
+      // Red (255,0,0) to White (255,255,255) as val goes from 0.01 to 0.5
+      const t = (val - 0.01) / (0.5 - 0.01);
+      const r = 255;
+      const g = Math.round(0 + (255 - 0) * t);
+      const b = Math.round(0 + (255 - 0) * t);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  return interpColor(gull);
 }
 
 
@@ -482,58 +1936,65 @@ function linkStrokeWidth(d) {
   return Math.max(2, d.w * 2);
 }
 
+// NOTA: graphData e graphDataReady non sono più necessari
+// Il grafo viene ora generato direttamente dall'API
 let graphData = null;
 let graphDataReady = false;
 
 // =============================================================================
-// CARICAMENTO ASINCRONO DEL GRAFO STRUTTURALE
-// Recupera la topologia della rete sociale dal file JSON predefinito.
-// Il grafo contiene le coordinate spaziali dei nodi e le relazioni di vicinato.
-// =============================================================================
-fetch('graph.json')
-  .then(response => response.json())
-  .then(data => {
-    graphData = data;
-    graphDataReady = true;
-    console.log('graph.json caricato:', graphData.nodes.length, 'nodi (posizioni e cluster)');
-    // Rendering automatico al completamento del caricamento
-    renderGraph();
-  })
-  .catch(err => console.warn('graph.json non trovato', err));
-
-// =============================================================================
 // FUNZIONE UNIFICATA DI COLORAZIONE DEI NODI
-// Determina il colore di riempimento di un nodo in base al suo stato
-// epidemiologico corrente. Supporta sia lo stato proveniente dall'API
-// che la classificazione basata su attributi locali del grafo.
+// Determina il colore di riempimento di un nodo in base alla sua gullibility.
+// Il colore è FISSO per ogni nodo e dipende solo dalla gullibility (0.01-1):
+// - 0.01 = ROSSO puro (o colore alternativo per daltonismo)
+// - 0.5 = BIANCO
+// - 1.0 = BLU puro (o colore alternativo per daltonismo)
+// La FORMA del nodo cambia in base allo stato (Susceptible=cerchio, FC=rombo, Believer=quadrato)
+// I colori del gradiente si adattano in base alla modalità daltonismo selezionata
 // =============================================================================
 const nodeColor = (d) => {
-  // Stato di gioco - Fact-Checker permanenti (massima priorita)
-  if (d.isEternalFC) return "#00d4ff"; // Ciano brillante
+  // Fact-Checker permanenti: usa sempre il colore eternal dalla palette
+  if (d.isEternalFC) return getColorForState('eternal');
   
-  // Classificazione in base allo stato epidemiologico (Believer/Fact-Checker/Susceptible)
-  if (d.scientificState === 'FC') {
-    return "#2ed573"; // Verde: Fact-Checker (verificatore)
-  }
-  if (d.scientificState === 'B') {
-    return "#ff4757"; // Rosso: Believer (diffusore di disinformazione)
-  }
-  if (d.scientificState === 'S') {
-    return "#c0c8d8"; // Grigio: Susceptible (suscettibile)
-  }
+  // Gradiente basato su gullibility: 0.01=colore basso → 0.5=bianco → 1=colore alto
+  let gull = typeof d.gullibility === 'number' ? d.gullibility : 0.5;
+  gull = Math.max(0.01, Math.min(1, gull));
   
-  // Classificazione alternativa basata sul raggio (grado di influenza)
-  // Utilizzata quando lo stato epidemiologico non e disponibile
-  if (d.radius !== undefined) {
-    // Raggio elevato (>=7): nodi ad alta influenza, classificati come Believer
-    if (d.radius >= 7) return "#ff4757";
-    // Raggio medio (3-6): nodi moderatamente influenti, classificati come Fact-Checker
-    if (d.radius >= 3) return "#2ed573";
-    // Raggio basso (<3): nodi a bassa influenza, classificati come Susceptible
-    return "#c0c8d8";
+  // Ottieni i colori estremi del gradiente in base alla modalità daltonismo
+  const palette = COLORBLIND_PALETTES[currentColorMode] || COLORBLIND_PALETTES.normal;
+  const lowColor = palette.lowGullibility || '#ff0000';  // Default rosso
+  const highColor = palette.highGullibility || '#0000ff'; // Default blu
+  
+  // Converti hex in RGB
+  function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : {r: 255, g: 0, b: 0};
   }
   
-  return "#c0c8d8"; // Colore predefinito: grigio neutrale
+  const lowRgb = hexToRgb(lowColor);
+  const highRgb = hexToRgb(highColor);
+  
+  function interpColor(val) {
+    if (val >= 0.5) {
+      // White (255,255,255) to highColor as val goes from 0.5 to 1
+      const t = (val - 0.5) / (1 - 0.5);
+      const r = Math.round(255 * (1 - t) + highRgb.r * t);
+      const g = Math.round(255 * (1 - t) + highRgb.g * t);
+      const b = Math.round(255 * (1 - t) + highRgb.b * t);
+      return `rgb(${r},${g},${b})`;
+    } else {
+      // lowColor to White (255,255,255) as val goes from 0.01 to 0.5
+      const t = (val - 0.01) / (0.5 - 0.01);
+      const r = Math.round(lowRgb.r * (1 - t) + 255 * t);
+      const g = Math.round(lowRgb.g * (1 - t) + 255 * t);
+      const b = Math.round(lowRgb.b * (1 - t) + 255 * t);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  return interpColor(gull);
 };
 
 // =============================================================================
@@ -607,8 +2068,13 @@ function selectConnectedSubset(graphData, numNodes) {
 // attrazione (archi) e repulsione (forza elettrostatica tra nodi).
 // =============================================================================
 function renderGraph(){
-  if (!graphDataReady || !graphData) {
-    console.error('graph.json non caricato');
+  // Controlla che i dati del grafo siano disponibili nello state (dall'API)
+  if (!state.nodes || state.nodes.length === 0) {
+    console.error('Nessun nodo disponibile - attendere inizializzazione API');
+    return;
+  }
+  if (!state.links || state.links.length === 0) {
+    console.error('Nessun arco disponibile - attendere inizializzazione API');
     return;
   }
 
@@ -619,37 +2085,13 @@ function renderGraph(){
 
   // Creazione di copie degli array per evitare mutazioni dell'originale
   // (la simulazione D3 modifica direttamente le coordinate dei nodi)
-  const links = graphData.links.map(d => ({...d}));
-  const nodes = graphData.nodes.map(d => ({...d}));
+  const links = state.links.map(d => ({...d}));
+  const nodes = state.nodes.map(d => ({
+    ...d,
+    simId: d.id  // L'ID è già l'identificatore della simulazione API
+  }));
 
-  console.log('graph.json:', nodes.length, 'nodi,', links.length, 'archi');
-
-  // Costruzione della mappa di corrispondenza tra ID nodo e stato epidemiologico
-  const stateMap = new Map();
-  if (state.nodes && state.nodes.length > 0) {
-    state.nodes.forEach((n) => {
-      // Mappa per ID del nodo (non per indice)
-      stateMap.set(n.id, n.scientificState);
-    });
-    console.log('Overlay stati API:', state.nodes.length, 'nodi');
-
-// =============================================================================
-// MAPPING TRA NODI GRAFICI E NODI DELLA SIMULAZIONE
-// Associa a ciascun nodo del grafo visuale l'identificatore corrispondente
-// nella simulazione API, consentendo la sincronizzazione bidirezionale.
-// =============================================================================
-if (state.nodes && state.nodes.length) {
-  nodes.forEach((d, i) => {
-    const simNode = state.nodes[i];
-    if (simNode) {
-      d.simId = simNode.id;                 // Identificatore numerico dell'API
-      d.scientificState = simNode.scientificState;
-    } else {
-      d.simId = null;
-    }
-  });
-}
-  }
+  console.log('📊 Grafo API:', nodes.length, 'nodi,', links.length, 'archi');
 
   // Memorizzazione del riferimento globale per aggiornamenti incrementali
   currentNodes = nodes;
@@ -659,43 +2101,51 @@ if (state.nodes && state.nodes.length) {
 
   // Inizializzazione della simulazione force-directed con forze multiple
   // (pattern di layout tipico delle visualizzazioni di reti sociali)
+  // Parametri ottimizzati per ~250 nodi con comunità ben separate
   simulation = d3.forceSimulation(nodes)
-      .force("link", d3.forceLink(links).id(d => d.id))
-      .force("charge", d3.forceManyBody())
-      .force("x", d3.forceX())
-      .force("y", d3.forceY());
+      .force("link", d3.forceLink(links).id(d => d.id).distance(30))  // Distanza archi ridotta
+      .force("charge", d3.forceManyBody().strength(-50))  // Forza repulsiva moderata per 250 nodi
+      .force("x", d3.forceX().strength(0.03))  // Centra orizzontalmente
+      .force("y", d3.forceY().strength(0.03))  // Centra verticalmente
+      .force("collision", d3.forceCollide().radius(8));  // Raggio collisione per nodi r=5
 
   // Creazione degli elementi grafici per gli archi (linee)
   const link = gLinks.selectAll("line")
     .data(links, d => `${d.source.id || d.source}-${d.target.id || d.target}`)
     .join("line")
-      .attr("stroke", "#999")
-      .attr("stroke-opacity", 0.6)
-      .attr("stroke-width", d => Math.sqrt(d.value));
+      .attr("stroke", "#667")
+      .attr("stroke-opacity", 0.3)
+      .attr("stroke-width", 1);
 
-  // Creazione degli elementi grafici per i nodi (cerchi)
-  const node = gNodes.selectAll("circle")
+  // Creazione degli elementi grafici per i nodi (shapes by role)
+  const node = gNodes.selectAll("path")
     .data(nodes, d => d.id)
-    .join("circle")
-      .attr("r", 5)
+    .join("path")
+      .attr("d", d => {
+        // Susceptible: cerchio, Believer: quadrato, Fact-Checker: rombo
+        if (d.role === 'susceptible' || d.scientificState === 'S') {
+          // Circle
+          return d3.symbol().type(d3.symbolCircle).size(100)();
+        } else if (d.role === 'believer' || d.scientificState === 'B') {
+          // Square
+          return d3.symbol().type(d3.symbolSquare).size(100)();
+        } else if (d.role === 'fact_checker' || d.scientificState === 'FC') {
+          // Diamond (rombo)
+          return d3.symbol().type(d3.symbolDiamond).size(100)();
+        } else {
+          // Default: circle
+          return d3.symbol().type(d3.symbolCircle).size(100)();
+        }
+      })
       .attr("fill", nodeColor)
       .attr("stroke", "#fff")
-      .attr("stroke-width", 1.5)
+      .attr("stroke-width", 1)
       .on("click", (ev, d) => {
-        // Gestione del click sui nodi: apre il modale solo per nodi
-        // effettivamente presenti nella simulazione (con simId valido)
         if (d.simId === undefined) {
-          console.warn(
-            "Nodo grafico senza corrispondente nella simulazione",
-            d.id
-          );
+          console.warn("Nodo grafico senza corrispondente nella simulazione", d.id);
           return;
         }
-
-        console.log(
-          `Nodo selezionato: simId=${d.simId}, stato=${d.scientificState}`
-        );
-
+        console.log(`Nodo selezionato: simId=${d.simId}, stato=${d.scientificState}`);
         openNodeModalBySimId(d.simId);
       })
       .call(d3.drag()
@@ -705,21 +2155,41 @@ if (state.nodes && state.nodes.length) {
 
   // Tooltip informativo per ciascun nodo
   node.append("title")
-  .text(d => `ID: ${d.id}\nStato: ${d.scientificState}`);
+    .text(d => `ID: ${d.id}\nRuolo: ${d.role}\nGullibility: ${typeof d.gullibility === 'number' ? d.gullibility.toFixed(2) : 'N/A'}`);
 
   // Callback eseguita ad ogni iterazione della simulazione fisica
   // per aggiornare le posizioni degli elementi grafici
   simulation.on("tick", () => {
     link
-        .attr("x1", d => d.source.x)
-        .attr("y1", d => d.source.y)
-        .attr("x2", d => d.target.x)
-        .attr("y2", d => d.target.y);
+      .attr("x1", d => d.source.x)
+      .attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x)
+      .attr("y2", d => d.target.y);
 
     node
-        .attr("cx", d => d.x)
-        .attr("cy", d => d.y);
+      .attr("transform", d => `translate(${d.x},${d.y})`);
   });
+
+  // Zoom automatico per adattare il grafo alla vista
+  setTimeout(() => {
+    const bounds = gNodes.node().getBBox();
+    if (bounds.width > 0 && bounds.height > 0) {
+      const scale = Math.min(width / bounds.width, height / bounds.height) * 0.8;
+      svg.call(zoom.transform, d3.zoomIdentity.scale(scale));
+    }
+    
+    // Dopo il layout iniziale, ferma la simulazione e blocca le posizioni
+    setTimeout(() => {
+      if (simulation) {
+        simulation.stop();
+        // Fissa le posizioni di tutti i nodi
+        nodes.forEach(d => {
+          d.fx = d.x;
+          d.fy = d.y;
+        });
+      }
+    }, 2000);
+  }, 1000);
 }
 
 // =============================================================================
@@ -784,26 +2254,154 @@ function applyEvent(day){
   return ev;
 }
 function computeCounts(){
-  const c={fake:0,truth:0,neutral:0}; state.nodes.forEach(n=> c[n.memory]++); return c;
+  // Conta i nodi per ruolo attuale
+  const c = { believer: 0, fact_checker: 0, susceptible: 0 };
+  state.nodes.forEach(n => {
+    if (n.role === 'believer') c.believer++;
+    else if (n.role === 'fact_checker') c.fact_checker++;
+    else c.susceptible++;
+  });
+  return c;
 }
 function updateKPI(){
-  const c=computeCounts(), tot=state.nodes.length;
-  $("#kFake").textContent=pct(c.fake,tot)+"%";
-  $("#kTruth").textContent=pct(c.truth,tot)+"%";
-  $("#kNeutral").textContent=pct(c.neutral,tot)+"%";
+  const c = computeCounts(), tot = state.nodes.length;
+  
+  // Controlli di sicurezza per gli elementi DOM - usa getElementById per maggiore affidabilità
+  const kFake = document.getElementById("kFake");
+  const kTruth = document.getElementById("kTruth");
+  const kNeutral = document.getElementById("kNeutral");
+  
+  if (!kFake || !kTruth || !kNeutral) {
+    console.warn("⚠️ Elementi KPI non disponibili nel DOM");
+    return;
+  }
+  
+  kFake.textContent = pct(c.believer, tot) + "%";
+  kTruth.textContent = pct(c.fact_checker, tot) + "%";
+  kNeutral.textContent = pct(c.susceptible, tot) + "%";
+  
+  // Mostra progresso vittoria per modalità "Scegli il Lato"
+  if (selectedMode === "libera" && playerTeam) {
+    const believerPerc = c.believer / tot;
+    const fcPerc = c.fact_checker / tot;
+    const turnsLeft = CONST.MAX_TURNS - state.currentDay;
+    
+    let progressHTML = '';
+    
+    if (playerTeam === 'believer') {
+      const progress = (believerPerc / CONST.WIN_PERCENTAGE) * 100;
+      const color = believerPerc >= CONST.WIN_PERCENTAGE ? '#22c55e' : '#5ea8ff';
+      progressHTML = `
+        <div style="margin-top: 16px; padding: 12px; background: rgba(239,68,68,0.1); border-radius: 8px; border: 1px solid rgba(239,68,68,0.3);">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px;">
+            <span style="color: #94a3b8;">🎯 Obiettivo Believer</span>
+            <span style="color: ${color}; font-weight: 600;">${pct(c.believer, tot)}% / 70%</span>
+          </div>
+          <div style="background: rgba(15,23,42,0.5); border-radius: 4px; height: 8px; overflow: hidden;">
+            <div style="width: ${Math.min(progress, 100)}%; height: 100%; background: linear-gradient(90deg, #ef4444, #dc2626); transition: width 0.3s;"></div>
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">⏱️ Turni rimasti: ${turnsLeft}</div>
+        </div>
+      `;
+    } else if (playerTeam === 'fact_checker') {
+      const progress = (fcPerc / CONST.WIN_PERCENTAGE) * 100;
+      const color = fcPerc >= CONST.WIN_PERCENTAGE ? '#22c55e' : '#5ea8ff';
+      progressHTML = `
+        <div style="margin-top: 16px; padding: 12px; background: rgba(34,197,94,0.1); border-radius: 8px; border: 1px solid rgba(34,197,94,0.3);">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px;">
+            <span style="color: #94a3b8;">🎯 Obiettivo Fact-Checker</span>
+            <span style="color: ${color}; font-weight: 600;">${pct(c.fact_checker, tot)}% / 70%</span>
+          </div>
+          <div style="background: rgba(15,23,42,0.5); border-radius: 4px; height: 8px; overflow: hidden;">
+            <div style="width: ${Math.min(progress, 100)}%; height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.3s;"></div>
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">⏱️ Turni rimasti: ${turnsLeft}</div>
+        </div>
+      `;
+    }
+    
+    // Aggiungi o aggiorna il div del progresso
+    let progressDiv = document.getElementById('victoryProgress');
+    if (!progressDiv) {
+      progressDiv = document.createElement('div');
+      progressDiv.id = 'victoryProgress';
+      const kpiGroup = document.querySelector('.group');
+      if (kpiGroup) {
+        kpiGroup.appendChild(progressDiv);
+      }
+    }
+    progressDiv.innerHTML = progressHTML;
+  }
 }
 
 // NOTA: calculateMeanFieldThreshold e updateSegregationMetrics sono state RIMOSSE
 // I parametri della simulazione sono gestiti interamente dall'API.
 // Non c'è più bisogno di calcoli locali - l'API decide tutto.
 
+// =============================================================================
+// SISTEMA DI STOP AUTOMATICO
+// Controlla convergenza (nessun cambiamento) e saturazione (dominanza gruppo)
+// =============================================================================
+
+// Calcola hash dello stato per rilevare cambiamenti
+function getStateHash() {
+  return state.nodes.map(n => n.scientificState).join('');
+}
+
+// Controlla se la simulazione deve fermarsi (convergenza o saturazione)
+function shouldStopSimulation() {
+  if (state.simulation.manualStop) {
+    return { stop: true, reason: '⏸️ Stop manuale' };
+  }
+  
+  // 1. Check convergenza: nessun cambiamento per N step
+  if (state.simulation.stepsWithoutChanges >= CONST.CONVERGENCE_STEPS) {
+    return { stop: true, reason: `✅ Convergenza raggiunta (${CONST.CONVERGENCE_STEPS} step senza cambiamenti)` };
+  }
+  
+  // 2. Check saturazione: un gruppo domina
+  const totalNodes = state.nodes.length;
+  if (totalNodes > 0) {
+    const believers = state.nodes.filter(n => n.scientificState === 'B').length;
+    const factCheckers = state.nodes.filter(n => n.scientificState === 'FC').length;
+    
+    const believersRatio = believers / totalNodes;
+    const fcRatio = factCheckers / totalNodes;
+    
+    if (believersRatio >= CONST.SATURATION_THRESHOLD) {
+      return { stop: true, reason: `🔴 Believers dominanti (${(believersRatio*100).toFixed(1)}%)` };
+    }
+    if (fcRatio >= CONST.SATURATION_THRESHOLD) {
+      return { stop: true, reason: `🟢 Fact-Checkers dominanti (${(fcRatio*100).toFixed(1)}%)` };
+    }
+  }
+  
+  return { stop: false };
+}
+
 
 // Esegue ESATTAMENTE un giorno (state.currentDay), poi imposta currentDay = prossimo giorno.
 // La label mostra l’ULTIMO giorno eseguito per chiarezza.
 async function stepOneDay(){
+  
+  // Check condizioni di stop PRIMA di eseguire lo step
+  const stopCheck = shouldStopSimulation();
+  if (stopCheck.stop) {
+    state.simulation.running = false;
+    // Reset del flag manuale DOPO aver fermato per evitare loop infinito
+    const wasManual = state.simulation.manualStop;
+    if (wasManual) {
+      state.simulation.manualStop = false;
+    }
+    showToast(stopCheck.reason);
+    console.log(`🛑 Simulazione fermata: ${stopCheck.reason}`);
+    return;
+  }
+  
   if(state.currentDay>CONST.DAYS) return;
 
   const day = state.currentDay;
+  const previousHash = getStateHash();
   
   try {
     // Invocazione dell'endpoint API per l'avanzamento temporale
@@ -821,21 +2419,35 @@ async function stepOneDay(){
     state.nodes.forEach(node => {
       const newState = newNodeStates[String(node.id)] || 'S';
       node.scientificState = newState;
-      
+      // Aggiorna anche il ruolo per la visualizzazione coerente
+      if (newState === 'B') node.role = 'believer';
+      else if (newState === 'FC') node.role = 'fact_checker';
+      else node.role = 'susceptible';
+
       // Sincronizzazione con i nodi della visualizzazione D3
       const d3Node = currentNodes.find(n => n.id === node.id);
       if (d3Node) {
         d3Node.scientificState = newState;
+        d3Node.role = node.role;
         d3Node.type = newState === 'B' ? 'Believer (Fake)' : 
                       newState === 'FC' ? 'Fact-Checker (Verita)' : 
                       'Susceptible (Neutrale)';
       }
-      
+
       // Mappatura dello stato alla memoria per retrocompatibilita
       if (newState === 'B') node.memory = 'fake';
       else if (newState === 'FC') node.memory = 'truth';
       else node.memory = 'neutral';
     });
+    
+    // Tracking convergenza: check se lo stato è cambiato
+    const currentHash = getStateHash();
+    if (currentHash === previousHash) {
+      state.simulation.stepsWithoutChanges++;
+      console.log(`📊 Nessun cambiamento per ${state.simulation.stepsWithoutChanges} step`);
+    } else {
+      state.simulation.stepsWithoutChanges = 0;
+    }
 
     // Calcolo delle statistiche aggregate per il giorno corrente
     const counts = {
@@ -860,24 +2472,137 @@ async function stepOneDay(){
     updateResultsChart(); 
     renderDailyTable();
     
-    // Aggiornamento dei colori del grafo in tempo reale
+    // Aggiornamento delle FORME del grafo in tempo reale (non i colori!)
     // Mappatura degli stati API agli elementi visuali D3 tramite identificatore
     const stateMap = new Map(Object.entries(newNodeStates).map(([id, state]) => [parseInt(id), state]));
     
-    gNodes.selectAll("circle")
-      .attr("fill", d => {
+    gNodes.selectAll("path")
+      .attr("d", d => {
         // Normalizzazione dell'identificatore (supporto per tipi string e int)
         const nodeId = typeof d.id === 'string' ? parseInt(d.id) : d.id;
         const newState = stateMap.get(nodeId);
         if (newState) {
           d.scientificState = newState;
+          // Aggiorna anche il ruolo per la forma
+          if (newState === 'B') d.role = 'believer';
+          else if (newState === 'FC') d.role = 'fact_checker';
+          else d.role = 'susceptible';
         }
-        return nodeColor(d);
+        
+        // Cambia FORMA in base allo stato (il colore rimane fisso basato su gullibility)
+        if (d.scientificState === 'S' || d.role === 'susceptible') {
+          // Susceptible: cerchio
+          return d3.symbol().type(d3.symbolCircle).size(100)();
+        } else if (d.scientificState === 'B' || d.role === 'believer') {
+          // Believer: quadrato
+          return d3.symbol().type(d3.symbolSquare).size(100)();
+        } else if (d.scientificState === 'FC' || d.role === 'fact_checker') {
+          // Fact-Checker: rombo
+          return d3.symbol().type(d3.symbolDiamond).size(100)();
+        } else {
+          return d3.symbol().type(d3.symbolCircle).size(100)();
+        }
       });
     
     // Aggiornamento dei tooltip informativi
-    gNodes.selectAll("circle").select("title").remove();
-    gNodes.selectAll("circle").append("title").text(d => `${d.scientificState}\n${d.id}`);
+    gNodes.selectAll("path").select("title").remove();
+    gNodes.selectAll("path").append("title").text(d => `ID: ${d.id}\nStato: ${d.scientificState}\nRuolo: ${d.role}\nGullibility: ${d.gullibility?.toFixed(2) || 'N/A'}`);
+
+    // *** APPLICAZIONE POWER-UP DOPO AGGIORNAMENTO API ***
+    // Questo assicura che le conversioni dei power-up sovrascrivano lo stato dell'API
+    if (selectedMode === "libera" && playerTeam) {
+      console.log("🎮 Applicazione power-up attivi...");
+      updateActivePowerups(); // Applica conversioni e decrementa durata
+      updateBudgetRecharge(); // Aggiorna ricarica budget
+      
+      // Ricalcola KPI dopo le conversioni dei power-up
+      updateKPI();
+      
+      // Aggiorna anche il grafico con i nuovi valori
+      const newCounts = {
+        fake: state.nodes.filter(n => n.scientificState === 'B').length,
+        truth: state.nodes.filter(n => n.scientificState === 'FC').length,
+        neutral: state.nodes.filter(n => n.scientificState === 'S').length
+      };
+      
+      // Aggiorna l'ultimo entry in daily con i valori corretti post power-up
+      if (state.daily.length > 0) {
+        state.daily[state.daily.length - 1].fake = newCounts.fake;
+        state.daily[state.daily.length - 1].truth = newCounts.truth;
+        state.daily[state.daily.length - 1].neutral = newCounts.neutral;
+      }
+      
+      updateResultsChart();
+    }
+
+    // *** CONTROLLO VITTORIA/SCONFITTA PER "SCEGLI IL LATO" ***
+    if (selectedMode === "libera" && playerTeam) {
+      const totalNodes = state.nodes.length;
+      const believerCount = state.nodes.filter(n => n.scientificState === 'B').length;
+      const fcCount = state.nodes.filter(n => n.scientificState === 'FC').length;
+      
+      const believerPerc = believerCount / totalNodes;
+      const fcPerc = fcCount / totalNodes;
+      
+      let gameEnded = false;
+      let victory = false;
+      let reason = "";
+      
+      // Check vittoria per percentuale
+      if (playerTeam === 'believer' && believerPerc >= CONST.WIN_PERCENTAGE) {
+        gameEnded = true;
+        victory = true;
+        reason = `Hai raggiunto il ${(believerPerc * 100).toFixed(1)}% di Believer!`;
+      } else if (playerTeam === 'fact_checker' && fcPerc >= CONST.WIN_PERCENTAGE) {
+        gameEnded = true;
+        victory = true;
+        reason = `Hai raggiunto il ${(fcPerc * 100).toFixed(1)}% di Fact-Checker!`;
+      }
+      
+      // Check sconfitta per percentuale avversario
+      if (playerTeam === 'believer' && fcPerc >= CONST.WIN_PERCENTAGE) {
+        gameEnded = true;
+        victory = false;
+        reason = `I Fact-Checker hanno raggiunto il ${(fcPerc * 100).toFixed(1)}%!`;
+      } else if (playerTeam === 'fact_checker' && believerPerc >= CONST.WIN_PERCENTAGE) {
+        gameEnded = true;
+        victory = false;
+        reason = `I Believer hanno raggiunto il ${(believerPerc * 100).toFixed(1)}%!`;
+      }
+      
+      // Check timeout (50 turni)
+      if (day >= CONST.MAX_TURNS) {
+        gameEnded = true;
+        // Vince chi ha più nodi
+        if (playerTeam === 'believer') {
+          victory = believerPerc > fcPerc;
+          reason = victory ? 
+            `Tempo scaduto! Believer ${(believerPerc * 100).toFixed(1)}% vs FC ${(fcPerc * 100).toFixed(1)}%` :
+            `Tempo scaduto! Fact-Checker ${(fcPerc * 100).toFixed(1)}% vs Believer ${(believerPerc * 100).toFixed(1)}%`;
+        } else {
+          victory = fcPerc > believerPerc;
+          reason = victory ? 
+            `Tempo scaduto! Fact-Checker ${(fcPerc * 100).toFixed(1)}% vs Believer ${(believerPerc * 100).toFixed(1)}%` :
+            `Tempo scaduto! Believer ${(believerPerc * 100).toFixed(1)}% vs FC ${(fcPerc * 100).toFixed(1)}%`;
+        }
+      }
+      
+      if (gameEnded) {
+        state.simulation.running = false;
+        
+        // Traccia fine partita nelle statistiche
+        trackGameEnd(victory, playerTeam);
+        
+        showGameEndModal(victory, reason, {
+          believerPerc: (believerPerc * 100).toFixed(1),
+          fcPerc: (fcPerc * 100).toFixed(1),
+          turns: day,
+          budgetSpent: 500 - playerState.budget,
+          powerupsUsed: calculatePowerupsUsed()
+        });
+        return;
+      }
+    }
 
     // Modalita Strategica: calcolo del guadagno in crediti proporzionale alla verita
     if(selectedMode === "Strategica" && day > 1){
@@ -1177,11 +2902,177 @@ $("#nodeApply").onclick=()=>{
 // reset della simulazione ed esportazione dei dati.
 // =============================================================================
 
+// Event listeners per la modalità "Scegli il Lato"
+$("#choiceFake")?.addEventListener("click", () => {
+  handleNewsChoice('fake');
+});
+
+$("#choiceTruth")?.addEventListener("click", () => {
+  handleNewsChoice('truth');
+});
+
+// Pulsante SET MODE apre il modale di selezione modalità
+$("#btnMode")?.addEventListener("click", () => {
+  openModal("#modeSelectionModal");
+});
+
+// Gestione selezione modalità
+document.querySelectorAll('.mode-selection-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const mode = card.getAttribute('data-mode');
+    
+    if (mode === 'scegli-lato') {
+      selectedMode = "libera"; // Imposta modalità libera per il sistema power-up
+      closeModal("#modeSelectionModal");
+      showNewsChoice();
+    } else if (mode === 'simulazione') {
+      selectedMode = "simulazione"; // Modalità senza power-up
+      playerTeam = null; // Nessun team selezionato
+      closeModal("#modeSelectionModal");
+      showToast("🔬 Modalità Simulazione: osserva la diffusione naturale");
+      initializeGame();
+    } else if (mode === 'crea-notizia') {
+      // Modalità non ancora implementata
+      showToast("🔒 Modalità in arrivo prossimamente!");
+    }
+  });
+});
+
+// Event listeners per Impostazioni
+$("#btnSettings")?.addEventListener("click", () => {
+  openModal("#settingsModal");
+});
+
+$("#settingsClose")?.addEventListener("click", () => {
+  closeModal("#settingsModal");
+});
+
+$("#btnShowTutorial")?.addEventListener("click", () => {
+  closeModal("#settingsModal");
+  showTutorial();
+});
+
+$("#settingsApply")?.addEventListener("click", () => {
+  // Applica tutte le impostazioni
+  applyAllSettings();
+  showToast("✅ Impostazioni applicate con successo");
+  // Chiudi il modal
+  closeModal("#settingsModal");
+});
+
+// Funzione per applicare tutte le impostazioni
+function applyAllSettings() {
+  // Accessibilità
+  const highContrast = $("#highContrastMode")?.checked || false;
+  const largeText = $("#largeTextMode")?.checked || false;
+  const reduceMotion = $("#reduceMotionMode")?.checked || false;
+  
+  document.body.classList.toggle("high-contrast", highContrast);
+  document.body.classList.toggle("large-text", largeText);
+  document.body.classList.toggle("reduce-motion", reduceMotion);
+  
+  localStorage.setItem("highContrast", highContrast);
+  localStorage.setItem("largeText", largeText);
+  localStorage.setItem("reduceMotion", reduceMotion);
+  
+  // Modalità daltonismo
+  const colorblindSelector = document.getElementById('colorblindMode');
+  if (colorblindSelector) {
+    currentColorMode = colorblindSelector.value;
+    localStorage.setItem('colorblindMode', currentColorMode);
+    
+    // Ricolora i nodi se il grafo è presente
+    if (state && state.nodes && typeof gNodes !== 'undefined') {
+      gNodes.selectAll("path")
+        .attr('fill', d => nodeColor(d));
+      
+      // Aggiorna legenda
+      d3.select('#legend-eternal').attr('fill', getColorForState('eternal'));
+    }
+  }
+  
+  // Audio
+  const soundEnabled = $("#soundEnabled")?.checked || false;
+  const volume = $("#volumeSlider")?.value || 70;
+  
+  localStorage.setItem("soundEnabled", soundEnabled);
+  localStorage.setItem("volume", volume);
+}
+
+// Event listeners per Area Personale
+$("#btnUserArea")?.addEventListener("click", () => {
+  updateUserAreaDisplay();
+  updateStatsDisplay(); // Aggiorna statistiche persistenti
+  openModal("#userAreaModal");
+});
+
+$("#userAreaClose")?.addEventListener("click", () => {
+  closeModal("#userAreaModal");
+});
+
+$("#btnLogin")?.addEventListener("click", () => {
+  handleLogin();
+});
+
+$("#btnGoogleLogin")?.addEventListener("click", () => {
+  handleGoogleLogin();
+});
+
+$("#btnGithubLogin")?.addEventListener("click", () => {
+  handleGithubLogin();
+});
+
+$("#btnLogout")?.addEventListener("click", () => {
+  handleLogout();
+});
+
+$("#linkRegister")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  showToast("Funzionalità di registrazione in arrivo!");
+});
+
+$("#btnSaveCurrentGame")?.addEventListener("click", () => {
+  saveCurrentGame();
+});
+
+// Gestione accessibilità
+$("#highContrastMode")?.addEventListener("change", (e) => {
+  document.body.classList.toggle("high-contrast", e.target.checked);
+  localStorage.setItem("highContrast", e.target.checked);
+});
+
+$("#largeTextMode")?.addEventListener("change", (e) => {
+  document.body.classList.toggle("large-text", e.target.checked);
+  localStorage.setItem("largeText", e.target.checked);
+});
+
+$("#reduceMotionMode")?.addEventListener("change", (e) => {
+  document.body.classList.toggle("reduce-motion", e.target.checked);
+  localStorage.setItem("reduceMotion", e.target.checked);
+});
+
+$("#soundEnabled")?.addEventListener("change", (e) => {
+  localStorage.setItem("soundEnabled", e.target.checked);
+});
+
+$("#volumeSlider")?.addEventListener("input", (e) => {
+  const value = e.target.value;
+  localStorage.setItem("volume", value);
+  // Aggiorna il display del valore percentuale
+  const volumeDisplay = document.getElementById("volumeValue");
+  if (volumeDisplay) volumeDisplay.textContent = value + "%";
+});
+
 $("#btnNext").addEventListener("click", async ()=>{
-  if(state.currentDay <= CONST.DAYS) await stepOneDay();
+  // Per modalità libera, controlla il limite MAX_TURNS
+  const maxDays = (selectedMode === "libera" && playerTeam) ? CONST.MAX_TURNS : CONST.DAYS;
+  if(state.currentDay <= maxDays) await stepOneDay();
 });
 $("#btnRunAll").addEventListener("click", async ()=>{
-  while(state.currentDay <= CONST.DAYS){
+  // Per modalità libera, controlla il limite MAX_TURNS
+  const maxDays = (selectedMode === "libera" && playerTeam) ? CONST.MAX_TURNS : CONST.DAYS;
+  state.simulation.running = true;
+  while(state.currentDay <= maxDays && state.simulation.running){
     await stepOneDay();
     await new Promise(r=> setTimeout(r, 180));
   }
@@ -1194,7 +3085,7 @@ $("#btnRefresh")?.addEventListener("click", async () => {
 });
 
 // Ripristino completo dello stato dell'applicazione
-$("#btnReset").addEventListener("click", ()=>{
+$("#btnReset")?.addEventListener("click", ()=>{
   state.currentDay=1; state.daily=[];
   $("#dayLabel").textContent=0;
   $("#kFake").textContent=$("#kTruth").textContent=$("#kNeutral").textContent="—";
@@ -1217,7 +3108,7 @@ $("#btnReset").addEventListener("click", ()=>{
 });
 
 // Esportazione dello stato corrente in formato JSON
-$("#btnExportJson").addEventListener("click", ()=>{
+$("#btnExportJson")?.addEventListener("click", ()=>{
   // Costruzione della struttura dati conforme allo schema graph.json
   const graphJsonContent={
     nodes:state.nodes.map(d=>({
@@ -1257,15 +3148,59 @@ $("#btnExportJson").addEventListener("click", ()=>{
 });
 
 // Esportazione del grafico statistico in formato immagine PNG
-$("#btnExportPng").addEventListener("click", ()=>{
+$("#btnExportPng")?.addEventListener("click", ()=>{
   const canvas=$("#summaryChart");
   if(!canvas){ updateResultsChart(true); openModal("#resultsModal"); return; }
   const url=canvas.toDataURL("image/png"); const a=document.createElement("a");
   a.href=url; a.download=`giancarlo_ruffo_chart_${Date.now()}.png`; a.click();
 });
-$("#btnSave").addEventListener("click", saveSession);
-$("#btnLoad").addEventListener("click", openLoadModal);
-$("#loadClose").addEventListener("click", ()=> closeModal("#loadModal"));
+$("#btnSave")?.addEventListener("click", saveSession);
+$("#btnLoad")?.addEventListener("click", openLoadModal);
+$("#loadClose")?.addEventListener("click", ()=> closeModal("#loadModal"));
+
+// Aggiunta: Event listener per il pulsante "Seleziona Modalità"
+const btnMode = $("#btnMode");
+if(btnMode) {
+  btnMode.addEventListener("click", ()=> openModal("#modeSelectionModal"));
+}
+
+// Event listeners per i power-up (modalità Scegli il Lato)
+$("#btnFakeBurst")?.addEventListener("click", () => activatePowerup('fakeBurst'));
+$("#btnPayInfluencer")?.addEventListener("click", () => activatePowerup('payInfluencer'));
+$("#btnEmergencyBeliever")?.addEventListener("click", () => activatePowerup('emergencyBeliever'));
+$("#btnTalkFriend")?.addEventListener("click", () => activatePowerup('talkFriend'));
+$("#btnNationalDebunk")?.addEventListener("click", () => activatePowerup('nationalDebunk'));
+$("#btnEmergencyFC")?.addEventListener("click", () => activatePowerup('emergencyFC'));
+
+// Gestione selezione modalità nel modale (inclusa Prima Pagina)
+let selectedModeOption = null;
+const modeButtons = [
+  $("#modeOptPrimaPagina"),
+  $("#modeOptStrategica"),
+  $("#modeOptCompetitiva"),
+  $("#modeOptLibera")
+];
+modeButtons.forEach(btn => {
+  if(btn) {
+    btn.addEventListener("click", function() {
+      modeButtons.forEach(b => b && b.classList.remove("selected"));
+      btn.classList.add("selected");
+      selectedModeOption = btn.getAttribute("data-mode");
+    });
+  }
+});
+const modeApply = $("#modeApply");
+if(modeApply) {
+  modeApply.addEventListener("click", function() {
+    if(selectedModeOption) setMode(selectedModeOption);
+  });
+}
+const modeClose = $("#modeClose");
+if(modeClose) {
+  modeClose.addEventListener("click", function() {
+    closeModal("#modeModal");
+  });
+}
 
 // =============================================================================
 // GESTIONE DELLA SELEZIONE DEL TEAM (MODALITA COMPETITIVA)
@@ -1276,7 +3211,7 @@ const teamFakeBtn = $("#teamFake");
 const teamTruthBtn = $("#teamTruth");
 const teamCancelBtn = $("#teamCancel");
 
-if(teamFakeBtn) teamFakeBtn.addEventListener("click", ()=>{
+if(teamFakeBtn) teamFakeBtn.addEventListener("click", async ()=>{
   // Registrazione della scelta del team nel sistema di stato
   state.game.competitive.playerTeam = "fake";
   state.game.playerTeam = "fake";
@@ -1284,7 +3219,7 @@ if(teamFakeBtn) teamFakeBtn.addEventListener("click", ()=>{
   
   // Inizializzazione del grafo solo al primo avvio della partita
   if(state.currentDay === 1 && state.nodes.length === 0) {
-    initializeGame();
+    await initializeGame();
   }
   
   state.game.movesLeft = state.game.movesPerDay;
@@ -1292,7 +3227,7 @@ if(teamFakeBtn) teamFakeBtn.addEventListener("click", ()=>{
   showToast("Sei nel team Fake 🔴");
 });
 
-if(teamTruthBtn) teamTruthBtn.addEventListener("click", ()=>{
+if(teamTruthBtn) teamTruthBtn.addEventListener("click", async ()=>{
   // Registrazione della scelta del team nel sistema di stato
   state.game.competitive.playerTeam = "truth";
   state.game.playerTeam = "truth";
@@ -1300,7 +3235,7 @@ if(teamTruthBtn) teamTruthBtn.addEventListener("click", ()=>{
   
   // Inizializzazione del grafo solo al primo avvio della partita
   if(state.currentDay === 1 && state.nodes.length === 0) {
-    initializeGame();
+    await initializeGame();
   }
   
   state.game.movesLeft = state.game.movesPerDay;
@@ -1327,21 +3262,59 @@ if(winnerCloseBtn) winnerCloseBtn.addEventListener("click", ()=>{
 // - Strategica: risorse limitate e obiettivi specifici
 // - Competitiva: confronto diretto contro avversario AI
 // =============================================================================
-let selectedMode = null;
 
 // Inizializzazione dello stato di gioco dopo la selezione del team
-function initializeGame(){
+async function initializeGame(){
   state.currentDay = 1;
   state.daily = [];
+  // Reset flags di stop
+  state.simulation.manualStop = false;
+  state.simulation.running = false;
+  state.simulation.stepsWithoutChanges = 0;
+  state.simulation.previousStateHash = null;
+  
+  // Inizia tracciamento partita
+  startGameTracking();
+  
+  // Reset sistema power-up per modalità "Scegli il Lato"
+  if (selectedMode === "libera" && playerTeam) {
+    playerState.budget = 500;
+    playerState.budgetRechargeCounter = 0;
+    playerState.activePowerups = [];
+    playerState.originalParams = null;
+    showTeamPowerups();
+  } else if (selectedMode === "simulazione") {
+    // Mostra messaggio per modalità simulazione
+    const welcomeDiv = document.querySelector("#gameBasePanel > div[style*='min-height: 400px']");
+    if (welcomeDiv) {
+      welcomeDiv.innerHTML = `
+        <div style="text-align: center; max-width: 400px;">
+          <div style="font-size: 64px; margin-bottom: 24px; filter: drop-shadow(0 4px 8px rgba(94,168,255,0.3));">
+            🔬
+          </div>
+          <h2 style="font-size: 24px; font-weight: 700; color: #e0e7ff; margin: 0 0 16px 0; line-height: 1.3;">
+            Modalità Simulazione
+          </h2>
+          <p style="font-size: 15px; color: #8b9dc3; line-height: 1.6; margin: 0;">
+            Osserva come le notizie si diffondono naturalmente nella rete sociale senza alcun intervento o utilizzo di power-up
+          </p>
+        </div>
+      `;
+      welcomeDiv.style.display = "flex";
+    }
+  }
+  
   $("#dayLabel").textContent = 0;
   gLinks.selectAll("*").remove();
   gNodes.selectAll("*").remove();
   
   //usa il modello scientifico tramite API
   const useScientific = true;  // L'API gestisce tutto
-  buildGraph(336, useScientific);
+  await buildGraph(336, useScientific);
   
   renderGraph();
+  
+  // Riprova a aggiornare i KPI dopo il rendering (gli elementi potrebbero essere ora disponibili)
   updateKPI();
   
   renderAchievementsUI();
@@ -1396,40 +3369,50 @@ const MODALITY_CONFIG = {
   Libera: {
     params: { diffusion: 0.7, credibility: 0.2, forgetting: 0.5, verify: 0.4 }
   },
+  'Prima Pagina': {
+    params: { diffusion: 0.7, credibility: 0.2, forgetting: 0.5, verify: 0.4 }
+  }
 };
 
-// Applica la configurazione della modalita selezionata e inizializza il gioco
-function setMode(mode) {
-  const cfg = MODALITY_CONFIG[mode];
-  if (!cfg) return;
-
-  selectedMode = mode;
-  TROPHY_SYSTEM.stats.modesPlayed.add(mode);
-  
-  // Configurazione dell'interfaccia in base alla modalita selezionata
-  updateGameBaseForMode(mode);
-
-  // Aggiorna el currentMode nella topbar
-  const currentModeEl = $("#currentMode");
-  if(currentModeEl) currentModeEl.textContent = mode;
-
-  // Disabilita il bottone modalità dopo la selezione
-  const btnMode = $("#btnMode");
-  if(btnMode) btnMode.disabled = true;
-
-  showToast(`Modalità selezionata: ${mode}`);
-  closeModal("#modeModal");
-  
-  // Ricaricamento del grafo con i parametri corrispondenti alla modalita
-  console.log(`Ricaricamento grafo per modalita: ${mode}`);
-  buildGraph(336, true).then(() => {
-    console.log(`Grafo ricaricato con parametri modalita ${mode}`);
-  });
-  
-  // Visualizzazione automatica del modale di selezione team
-  setTimeout(() => {
-    openModal("#teamModal");
-  }, 300);
+// 1. Definisci setMode base se non esiste
+if (typeof setMode !== 'function') {
+  window.setMode = async function(mode) {
+    selectedMode = mode;
+    TROPHY_SYSTEM.stats.modesPlayed.add(mode);
+    // UI: aggiorna la topbar
+    const currentModeEl = $("#currentMode");
+    if(currentModeEl) currentModeEl.textContent = mode;
+    // Disabilita il bottone modalità dopo la selezione
+    const btnMode = $("#btnMode");
+    if(btnMode) btnMode.disabled = true;
+    showToast(`Modalità selezionata: ${mode}`);
+    closeModal("#modeModal");
+    // Avvia la partita normalmente
+    await initializeGame();
+  };
+}
+// 2. Modifica setMode per gestire la nuova modalità
+const oldSetMode = setMode;
+setMode = function(mode) {
+  if (mode === 'Prima Pagina') {
+    selectedMode = mode;
+    TROPHY_SYSTEM.stats.modesPlayed.add(mode);
+    // Mostra la notizia come card giornale, poi avvia la partita su quella notizia
+    showNewsCard();
+    // La funzione startGameAfterChoice() verrà chiamata dopo la scelta
+    // e avvierà la giocabilità normalmente
+    // UI: aggiorna la topbar
+    const currentModeEl = $("#currentMode");
+    if(currentModeEl) currentModeEl.textContent = mode;
+    // Disabilita il bottone modalità dopo la selezione
+    const btnMode = $("#btnMode");
+    if(btnMode) btnMode.disabled = true;
+    showToast(`Modalità selezionata: ${mode}`);
+    closeModal("#modeModal");
+    return;
+  }
+  // ...existing code...
+  return oldSetMode.apply(this, arguments);
 }
 
 // =============================================================================
@@ -1544,595 +3527,137 @@ function updateGameBaseUI(){
   // enable/disable strategy buttons - disabilita se non c'è grafo o monete insufficienti
   const hasGraph = state.nodes && state.nodes.length > 0;
   const btnH = $("#btnHubs"), btnF = $("#btnFrontiere"), btnR = $("#btnRandom");
-  if(btnH) btnH.disabled = !hasGraph || state.game.coins < 500;
-  if(btnF) btnF.disabled = !hasGraph || state.game.coins < 350;
-  if(btnR) btnR.disabled = !hasGraph || state.game.coins < 175;
-
-  // libera: show params
-  const pDiff = $("#paramDiffusion"), pCred = $("#paramCredibility"), pFor = $("#paramForgetting"), pVer = $("#paramVerify");
-  if(pDiff && pCred && pFor && pVer){ pDiff.value = GAME_PARAMS.diffusion; pCred.value = GAME_PARAMS.credibility; pFor.value = GAME_PARAMS.forgetting; pVer.value = GAME_PARAMS.verify; }
+  if(btnH) btnH.disabled = !hasGraph || state.game.coins < 50 || state.game.strategies.hubs;
+  if(btnF) btnF.disabled = !hasGraph || state.game.coins < 50 || state.game.strategies.frontiere;
+  if(btnR) btnR.disabled = !hasGraph || state.game.coins < 30 || state.game.strategies.random;
 }
 
-// =============================================================================
-// ACQUISTO E APPLICAZIONE DELLE STRATEGIE DI IMMUNIZZAZIONE
-// Le strategie consentono di posizionare Fact-Checker in posizioni
-// strategiche della rete secondo diversi criteri topologici.
-// =============================================================================
-function buyStrategy(name, cost){
-  if(!state.nodes || state.nodes.length === 0) return showToast('Premi START per generare il grafo prima');
-  if(state.game.coins < cost) return showToast('Monete insufficienti');
-  if(selectedMode === "Strategica" && state.game.movesLeft <= 0) return showToast('Non hai più mosse per oggi!');
-  
-  state.game.coins -= cost; 
-  state.game.strategies[name]=true; 
-  
-  // Nella modalita strategica, ogni azione consuma una mossa giornaliera
-  if(selectedMode === "Strategica"){
-    state.game.movesLeft--;
-  }
-  
-  updateGameBaseUI();
-  showToast(`Strategia ${name} acquistata`);
-  
-  // Applicazione della strategia: posizionamento di 16 Fact-Checker
-  applyStrategy(name);
-}
+// Funzione per mostrare la card iniziale con la notizia e la scelta
+async function showNewsCard() {
+  // Richiedi una notizia casuale all'API (URL assoluto per compatibilità con server statico)
+  const res = await fetch('http://localhost:8000/api/v1/news/random');
+  currentNews = await res.json();
+  // Overlay fullscreen, nessun box, PNG naturale
+  const overlay = document.createElement('div');
+  overlay.className = 'news-card-overlay';
+  overlay.style.background = 'rgba(30,40,60,0.88)';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '10000';
+  overlay.style.backdropFilter = 'blur(2px)';
 
-// Implementazione delle strategie di posizionamento dei Fact-Checker
-function applyStrategy(strategyName){
-  if(strategyName === "hubs"){
-    // Strategia Hub: selezione dei nodi con il grado (numero di connessioni) piu elevato
-    // Questi nodi hanno maggiore influenza nella propagazione dell'informazione
-    const degrees = state.nodes.map(n => ({
-      node: n,
-      degree: state.links.filter(l => {
-        const src = typeof l.source === "object" ? l.source.id : l.source;
-        const tgt = typeof l.target === "object" ? l.target.id : l.target;
-        return src === n.id || tgt === n.id;
-      }).length
-    }));
-    degrees.sort((a, b) => b.degree - a.degree);
-    // Conversione dei 16 nodi piu connessi in Fact-Checker
-    for(let i = 0; i < Math.min(16, degrees.length); i++){
-      if(degrees[i].node.role !== "fact_checker") {
-        degrees[i].node.role = "fact_checker";
-        degrees[i].node.isEternalFC = true;
-        degrees[i].node.scientificState = 'FC';
-        degrees[i].node.memory = 'truth';
-        // NOTA: Questo aggiornamento e puramente visivo; la simulazione backend
-        // non viene modificata direttamente da questa operazione
-      }
-    }
-  }else if(strategyName === "frontiere"){
-    // Strategia Frontiera: selezione dei nodi ponte tra comunita diverse
-    // Implementazione semplificata basata sull'eterogeneita dei vicini
-    const candidates = state.nodes.filter(n => {
-      const neighbors = neighborsOf(n);
-      if(neighbors.length === 0) return false;
-      const roles = new Set(neighbors.map(nb => nb.role));
-      return roles.size > 1; // ponte tra ruoli diversi
-    });
-    candidates.slice(0, 16).forEach(n => {
-      if(n.role !== "fact_checker") {
-        n.role = "fact_checker";
-        n.isEternalFC = true;
-        n.scientificState = 'FC';
-        n.memory = 'truth';
-        // NOTA: La simulazione è gestita dall'API - questo cambia solo la visualizzazione
-      }
-    });
-  }else if(strategyName === "random"){
-    // Strategia Random: selezione casuale uniforme di 16 nodi
-    // Questa strategia serve come baseline per il confronto con strategie mirate
-    const shuffled = [...state.nodes].sort(() => Math.random() - 0.5);
-    for(let i = 0; i < Math.min(16, shuffled.length); i++){
-      if(shuffled[i].role !== "fact_checker") {
-        shuffled[i].role = "fact_checker";
-        shuffled[i].isEternalFC = true;
-        shuffled[i].scientificState = 'FC';
-        shuffled[i].memory = 'truth';
-        // NOTA: La simulazione è gestita dall'API - questo cambia solo la visualizzazione
-      }
-    }
-  }
-  
-  // Aggiornamento della visualizzazione con i nuovi stati
-  gNodes.selectAll('circle').attr('stroke', colorStroke).attr('fill', colorFill);
-  showToast(`16 Fact-checker assegnati (${strategyName})`);
-}
+  // PNG naturale, testo sopra in posizione assoluta centrata
+  const container = document.createElement('div');
+  container.style.position = 'relative';
+  container.style.display = 'inline-block';
+  container.style.width = 'auto';
+  container.style.height = 'auto';
 
-// =============================================================================
-// AGGIUNTA MANUALE DI UN FACT-CHECKER PERMANENTE
-// Consente al giocatore di selezionare interattivamente un nodo specifico
-// da convertire in Fact-Checker con immunita visiva (bordo evidenziato).
-// =============================================================================
-function addEternalFactChecker(){
-  if(!state.nodes || state.nodes.length === 0) return showToast('Premi START per generare il grafo prima');
-  if(selectedMode === "Strategica" && state.game.movesLeft <= 0) return showToast('Non hai più mosse per oggi!');
-  if(state.game.coins < 40) return showToast('Crediti insufficienti per aggiungere un Eternal FC (costo 40)');
-  
-  // Abilita selezione: chiedi di cliccare su un nodo
-  selectingEternalFC = true;
-  showToast('Clicca su un nodo per posizionare l\'Eternal Fact-Checker');
-}
+  const img = document.createElement('img');
+  img.src = 'assets/news template.png';
+  img.alt = 'Prima Pagina';
+  img.style.display = 'block';
+  img.style.width = 'auto';
+  img.style.height = 'auto';
+  img.style.maxWidth = '98vw';
+  img.style.maxHeight = '92vh';
+  img.style.borderRadius = '0';
+  img.style.boxShadow = '0 8px 40px #0002';
 
-// Inizializzazione dei gestori eventi per i controlli dell'interfaccia di gioco
-function initGameBaseHandlers(){
-  const bH = $("#btnHubs"), bF=$("#btnFrontiere"), bR=$("#btnRandom");
-  if(bH) bH.addEventListener('click', ()=> buyStrategy('hubs',500));
-  if(bF) bF.addEventListener('click', ()=> buyStrategy('frontiere',350));
-  if(bR) bR.addEventListener('click', ()=> buyStrategy('random',175));
+  // Wrapper per i testi e bottoni, centrato nella parte vuota del PNG
+  const textWrap = document.createElement('div');
+  textWrap.style.position = 'absolute';
+  textWrap.style.top = '8%';
+  textWrap.style.left = '0';
+  textWrap.style.width = '100%';
+  textWrap.style.textAlign = 'center';
+  textWrap.style.pointerEvents = 'auto';
+  textWrap.style.display = 'flex';
+  textWrap.style.flexDirection = 'column';
+  textWrap.style.alignItems = 'center';
+  textWrap.style.justifyContent = 'flex-start';
 
-  const btnAddFC = $("#btnAddEternal"); if(btnAddFC) btnAddFC.addEventListener('click', ()=> addEternalFactChecker());
+  // Fonte
+  const fonte = document.createElement('div');
+  fonte.className = 'news-header';
+  fonte.style.fontSize = '2.2em';
+  fonte.style.fontWeight = '900';
+  fonte.style.fontFamily = 'Impact, Georgia, serif';
+  fonte.style.color = '#111';
+  fonte.style.textTransform = 'uppercase';
+  fonte.innerText = currentNews.source ? currentNews.source.toUpperCase() : 'TESTATA';
 
-  // NOTA ARCHITETTURALE: I gestori per la modifica dei parametri scientifici
-  // (alpha, beta, p_v, p_f) sono stati rimossi in quanto questi parametri
-  // sono ora gestiti esclusivamente dal backend API. L'interfaccia utente
-  // puo visualizzare valori di riferimento ma non modificare la simulazione.
-}
+  // Data
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const data = document.createElement('div');
+  data.className = 'news-date';
+  data.style.fontSize = '1.1em';
+  data.style.color = '#222';
+  data.style.margin = '8px 0 18px 0';
+  data.innerText = dateStr;
 
-// =============================================================================
-// GESTIONE DEL MODALE DI SELEZIONE MODALITA
-// =============================================================================
-const btnMode = $("#btnMode");
-if(btnMode){
-  btnMode.addEventListener("click", ()=>{
-    // Ripristino dello stato di selezione al momento dell'apertura
-    setTimeout(()=>{
-      if(selectedMode) {
-        const selected = $(`[data-mode="${selectedMode}"]`);
-        if(selected) {
-          // Rimuovi da tutti
-          $$("[data-mode]").forEach(o => o.classList.remove("selected"));
-          // Aggiungi al selezionato
-          selected.classList.add("selected");
-        }
-      }
-      openModal("#modeModal");
-    }, 100);
-  });
-}
-const modeClose = $("#modeClose");
-if(modeClose) modeClose.addEventListener("click", ()=> closeModal("#modeModal"));
+  // Notizia
+  const headline = document.createElement('div');
+  headline.className = 'news-headline';
+  headline.style.fontWeight = 'bold';
+  headline.style.color = '#111';
+  headline.style.margin = '32px auto 0 auto';
+  headline.style.lineHeight = '1.22';
+  headline.style.fontFamily = 'Georgia, Times New Roman, Times, serif';
+  headline.style.maxWidth = '78%';
+  headline.style.padding = '0 2vw';
+  headline.style.wordBreak = 'break-word';
+  headline.style.textAlign = 'center';
+  // Font-size dinamico: più testo = più piccolo
+  const len = currentNews.text.length;
+  let fz = 1.45;
+  if (len > 90) fz = 1.18;
+  else if (len > 60) fz = 1.32;
+  headline.style.fontSize = fz + 'em';
+  headline.style.padding = '0 4vw';
+  headline.innerText = currentNews.text;
 
-// Configurazione della logica di selezione nel modale delle modalita
-(function setupModeModal(){
-  const modeOpts = $$("[data-mode]");
-  modeOpts.forEach(opt => {
-    opt.addEventListener("click", function() {
-      // Rimuovi selezione precedente
-      modeOpts.forEach(o => o.classList.remove("selected"));
-      // Marca questo come selezionato
-      this.classList.add("selected");
-      selectedMode = this.dataset.mode;
-    });
-  });
+  // Scelte
+  const choices = document.createElement('div');
+  choices.className = 'news-card-choices';
+  choices.style.position = 'static';
+  choices.style.margin = '38px auto 0 auto';
+  choices.style.display = 'flex';
+  choices.style.justifyContent = 'center';
+  choices.style.gap = '38px';
+  choices.style.pointerEvents = 'auto';
 
-  const modeApply = $("#modeApply");
-  if(modeApply){
-    modeApply.addEventListener("click", ()=>{
-      if(!selectedMode){
-        showToast("Per favore seleziona una modalità");
-        return;
-      }
-      setMode(selectedMode);
-    });
-  }
-})();
+  const btnFake = document.createElement('button');
+  btnFake.id = 'btnFake';
+  btnFake.className = 'news-choice-btn news-fake-btn';
+  btnFake.innerText = 'FAKE';
+  const btnTrue = document.createElement('button');
+  btnTrue.id = 'btnTrue';
+  btnTrue.className = 'news-choice-btn news-true-btn';
+  btnTrue.innerText = 'VERA';
+  choices.appendChild(btnFake);
+  choices.appendChild(btnTrue);
 
-// =============================================================================
-// INIZIALIZZAZIONE DELL'APPLICAZIONE
-// Funzione IIFE (Immediately Invoked Function Expression) che configura
-// lo stato iniziale dell'applicazione e registra i gestori degli eventi.
-// =============================================================================
-(function init(){
-  const daysTotal = $("#daysTotal");
-  if(daysTotal) daysTotal.textContent = CONST.DAYS;
-  // Calcolo del parametro di dimenticanza basato sulla durata della simulazione
-  CONST.FORGET_DAYS = Math.max(1, Math.round(GAME_PARAMS.forgetting * CONST.DAYS));
-  // Il rendering del grafo viene posticipato fino alla selezione della modalita
-  initGameBaseHandlers();
-  // Registrazione dei gestori per le funzionalita avanzate
-  initStrategicHandlers();
-  initCompetitiveHandlers();
-  // L'interfaccia iniziale mostra solo il messaggio di benvenuto
-})();
+  textWrap.appendChild(fonte);
+  textWrap.appendChild(data);
+  textWrap.appendChild(headline);
+  textWrap.appendChild(choices);
 
-// =============================================================================
-// FUNZIONI PER LA MODALITA STRATEGICA
-// Gestione dei potenziamenti (boost), delle campagne mirate e delle
-// previsioni sull'evoluzione della simulazione.
-// =============================================================================
-function initStrategicHandlers(){
-  // Configurazione della visibilita delle sezioni specifiche
-  const show = () => {
-    const ids = ['#hr-strategies','#gb-strategies','#hr-boosts','#gb-boosts','#hr-targeted','#gb-targeted','#hr-predictive','#gb-predictive'];
-    ids.forEach(id=>{ const el=$(id); if(el) el.style.display=''; });
+  container.appendChild(img);
+  container.appendChild(textWrap);
+  overlay.appendChild(container);
+  document.body.appendChild(overlay);
+
+  btnFake.onclick = () => {
+    userTeam = 'believer';
+    document.body.removeChild(overlay);
+    startGameAfterChoice();
   };
-  // Registrazione degli eventi per i pulsanti dei potenziamenti
-  const boostIds = ['#boostTruthAmp','#boostFakeVirus','#boostMassDebunk','#boostMemoryWipe','#boostSegregation'];
-  boostIds.forEach(id=>{
-    const el = $(id);
-    if(!el) return;
-    el.addEventListener('click', ()=> purchaseBoost(el.id, parseInt(el.dataset.cost,10)));
-  });
-
-  // Registrazione degli eventi per le campagne mirate
-  const camps = ['#campGullible','#campSkeptic','#campFrontier'];
-  camps.forEach(s=>{ const el = $(s); if(!el) return; el.addEventListener('click', ()=> purchaseCampaign(el)); });
-
-  // Pulsante per le previsioni (funzionalita disabilitata)
-  const btnPredict = $('#btnPredictNext3');
-  if(btnPredict) btnPredict.addEventListener('click', ()=> showPredictiveNext3());
-
-  // Inizializzazione della griglia degli achievement
-  renderAchievementsUI();
-  
-  // Aggiornamento dello stato dei pulsanti in base alle risorse disponibili
-  updateButtonStates();
-}
-
-// =============================================================================
-// AGGIORNAMENTO DELLO STATO DEI CONTROLLI
-// Abilita o disabilita i pulsanti in base alle risorse disponibili (crediti)
-// e alle restrizioni della modalita di gioco corrente.
-// =============================================================================
-function updateButtonStates(){
-  // Verifica disponibilita per i pulsanti dei potenziamenti
-  const boostIds = ['#boostTruthAmp','#boostFakeVirus','#boostMassDebunk','#boostMemoryWipe','#boostSegregation'];
-  boostIds.forEach(id=>{
-    const el = $(id);
-    if(!el) return;
-    const cost = parseInt(el.dataset.cost, 10) || 0;
-    const canAfford = state.game.coins >= cost;
-    el.disabled = !canAfford;
-    el.style.opacity = canAfford ? '1' : '0.5';
-    el.style.cursor = canAfford ? 'pointer' : 'not-allowed';
-  });
-  
-  // Verifica disponibilita per i pulsanti delle campagne
-  const camps = ['#campGullible','#campSkeptic','#campFrontier'];
-  camps.forEach(id=>{
-    const el = $(id);
-    if(!el) return;
-    const cost = parseInt(el.dataset.cost, 10) || 0;
-    const canAfford = state.game.coins >= cost;
-    el.disabled = !canAfford;
-    el.style.opacity = canAfford ? '1' : '0.5';
-    el.style.cursor = canAfford ? 'pointer' : 'not-allowed';
-  });
-  
-  // Verifica disponibilita per le azioni competitive (limite giornaliero)
-  const battles = ['#battleSabotage','#battleSteal','#battleReverse'];
-  battles.forEach(id=>{
-    const el = $(id);
-    if(!el) return;
-    const cost = parseInt(el.dataset.cost, 10) || 0;
-    const canAfford = state.game.coins >= cost;
-    el.disabled = !canAfford || state.game.battleWarsUsedToday;
-    el.style.opacity = (canAfford && !state.game.battleWarsUsedToday) ? '1' : '0.5';
-    el.style.cursor = (canAfford && !state.game.battleWarsUsedToday) ? 'pointer' : 'not-allowed';
-  });
-}
-
-// =============================================================================
-// ACQUISTO E ATTIVAZIONE DEI POTENZIAMENTI
-// Gestisce la transazione economica e l'effetto del potenziamento selezionato.
-// Ciascun boost ha un effetto specifico sulla dinamica della simulazione.
-// =============================================================================
-function purchaseBoost(boostId, cost){
-  if(!state.game.boostMgr) return showToast('Sistema non inizializzato');
-  if(state.game.coins < cost) return showToast('Monete insufficienti');
-  state.game.coins -= cost;
-  
-  // Aggiornamento delle statistiche per il sistema di achievement
-  state.game.coins > TROPHY_SYSTEM.stats.maxCoins && (TROPHY_SYSTEM.stats.maxCoins = state.game.coins);
-  TROPHY_SYSTEM.stats.boostsUsed[boostId] = (TROPHY_SYSTEM.stats.boostsUsed[boostId] || 0) + 1;
-  
-  switch(boostId){
-    case 'boostTruthAmp':
-      state.game.boostMgr.activate('truthAmp', 1, 1.5);
-      showToast('Truth Amp attivato (1 giorno)');
-      break;
-    case 'boostFakeVirus':
-      state.game.boostMgr.activate('fakeVirus', 1, 1.5);
-      TROPHY_SYSTEM.stats.fakeVirusCount++;
-      showToast('Fake Virus attivato (1 giorno)');
-      break;
-    case 'boostMassDebunk':
-      applyMassDebunk(0.3);
-      TROPHY_SYSTEM.stats.massDebunkCount++;
-      showToast('Mass Debunk eseguito su 30% della rete');
-      break;
-    case 'boostMemoryWipe':
-      applyMemoryWipe(0.2);
-      TROPHY_SYSTEM.stats.memoryWipeCount++;
-      showToast('Memory Wipe: 20% nodi tornano S');
-      break;
-    case 'boostSegregation':
-      state.game.boostMgr.activate('quarantine', 1, 1, { deltaRho: -0.15 });
-      showToast('Quarantine attivata: ridotta mixing per 1 giorno');
-      break;
-  }
-  updateGameBaseUI();
-  renderBoostsActive();
-  TROPHY_SYSTEM.checkUnlocks();
-}
-
-// Acquisto di una campagna mirata su una specifica comunita della rete
-function purchaseCampaign(el){
-  const cost = parseInt(el.dataset.cost,10) || 0;
-  if(state.game.coins < cost) return showToast('Monete insufficienti');
-  state.game.coins -= cost;
-  const tgt = el.dataset.target;
-  const mult = parseFloat(el.dataset.mult) || 1.2;
-  state.game.campaign = { active:true, targetCommunity:tgt, multiplier:mult, daysLeft:2 };
-  showToast(`Campagna attiva su ${tgt} (${Math.round((mult-1)*100)}% effect)`);
-  updateGameBaseUI();
-}
-
-// =============================================================================
-// APPLICAZIONE DEL DEBUNKING MASSIVO
-// Converte una frazione dei Believer in Fact-Checker.
-// NOTA: Questa operazione ha effetto solo sulla visualizzazione locale;
-// l'API backend potrebbe ripristinare gli stati originali al passo successivo.
-// =============================================================================
-function applyMassDebunk(frac){
-  // Selezione dei nodi attualmente nello stato Believer
-  const believers = state.nodes.filter(n => n.scientificState === 'B');
-  const toConvert = Math.max(1, Math.floor(believers.length * frac));
-  
-  // Applicazione dell'effetto visivo di transizione
-  believers.slice(0, toConvert).forEach(node => {
-    node.isConverting = true; // Flag per l'animazione di conversione
-    setTimeout(() => {
-      node.isConverting = false;
-    }, 600);
-    
-    // Aggiornamento dello stato visuale (non sincronizzato con l'API)
-    node.scientificState = 'FC';
-    node.memory = 'truth';
-  });
-  
-  // Aggiorna visualmente subito
-  gNodes.selectAll("circle")
-    .attr("fill", d=> colorFill(d))
-    .attr("stroke", d=> colorStroke(d))
-    .classed("highlight-debunk", d => d.isConverting);
-  
-  setTimeout(() => {
-    gNodes.selectAll("circle").classed("highlight-debunk", false);
-  }, 600);
-  
-  // AVVERTENZA: La modifica dello stato e puramente visiva e temporanea.
-  // Il backend API mantiene lo stato autoritativo della simulazione.
-  showToast(`Mass Debunk: ${toConvert} nodi convertiti (effetto visivo)`);
-}
-
-// =============================================================================
-// APPLICAZIONE DEL MEMORY WIPE
-// Riporta una frazione casuale di nodi allo stato Susceptible,
-// simulando la perdita di memoria dell'informazione precedente.
-// =============================================================================
-function applyMemoryWipe(frac){
-  // Operazione sulla cache locale dei nodi
-  const arr = state.nodes;
-  const total = arr.length;
-  const count = Math.max(1, Math.floor(total * frac));
-  const shuffled = [...arr].sort(()=>Math.random()-0.5);
-  
-  // Applicazione dell'effetto visivo di reset
-  shuffled.slice(0, count).forEach(node => {
-    node.isWiping = true;
-    // Transizione visuale allo stato Susceptible
-    node.scientificState = 'S';
-    node.memory = 'neutral';
-  });
-  
-  gNodes.selectAll("circle")
-    .classed("highlight-debunk", d => d.isWiping);
-    
-  for(let i=0;i<count;i++) shuffled[i].state = 'S';
-  
-  setTimeout(() => {
-    shuffled.forEach(n => {
-      const d3 = state.nodes.find(d => d.id === n.nodeId);
-      if(d3) d3.isWiping = false;
-    });
-    gNodes.selectAll("circle").classed("highlight-debunk", false);
-  }, 400);
-}
-
-// Visualizzazione dell'elenco dei potenziamenti attualmente attivi
-function renderBoostsActive(){
-  if(!state.game.boostMgr) return; // Verifica di sicurezza
-  const active = state.game.boostMgr.getActive();
-  const el = $("#boosts-active-list"); 
-  if(el) el.textContent = active.length ? active.join(', ') : '—';
-}
-
-// =============================================================================
-// RENDERING DELL'INTERFACCIA DEGLI ACHIEVEMENT
-// Genera dinamicamente la griglia dei trofei organizzati per categoria,
-// con indicazione visiva dello stato di sblocco.
-// =============================================================================
-function renderAchievementsUI(){
-  const grid = $("#achievements-grid"); if(!grid) return;
-  grid.innerHTML = '';
-  
-  // Definizione delle categorie con relativi attributi visivi
-  const categories = {
-    fake: { label: '🔴 Disinformazione', color: '#ef4444' },
-    truth: { label: '🟢 Verità', color: '#22c55e' },
-    competitive: { label: '⚔️ Competitiva', color: '#f97316' },
-    exploration: { label: 'Esplorazione', color: '#a78bfa' },
-    rare: { label: '⭐ Rari', color: '#fbbf24' }
+  btnTrue.onclick = () => {
+    userTeam = 'factchecker';
+    document.body.removeChild(overlay);
+    startGameAfterChoice();
   };
-  
-  for(const [catKey, catInfo] of Object.entries(categories)){
-    const catTrophies = TROPHY_SYSTEM.trophies.filter(t => t.category === catKey);
-    if(catTrophies.length === 0) continue;
-    
-    const catDiv = document.createElement('div');
-    catDiv.style.marginBottom = '12px';
-    catDiv.innerHTML = `<div style="font-size:0.9em; font-weight:bold; color:${catInfo.color}; margin-bottom:6px;">${catInfo.label}</div>`;
-    
-    const trophyContainer = document.createElement('div');
-    trophyContainer.style.display = 'grid';
-    trophyContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
-    trophyContainer.style.gap = '6px';
-    
-    catTrophies.forEach(trophy => {
-      const tDiv = document.createElement('div');
-      tDiv.style.cssText = `
-        border: 1px solid ${trophy.unlocked ? catInfo.color : 'rgba(255,255,255,0.1)'};
-        padding: 8px;
-        border-radius: 8px;
-        background: ${trophy.unlocked ? `rgba(${catInfo.color === '#ef4444' ? '239,68,68' : catInfo.color === '#22c55e' ? '34,197,94' : '249,115,22'},0.1)` : 'rgba(255,255,255,0.02)'};
-        opacity: ${trophy.unlocked ? 1 : 0.6};
-        font-size: 0.8em;
-        cursor: pointer;
-        transition: all 0.3s;
-      `;
-      tDiv.innerHTML = `<strong>${trophy.name}</strong><br><small>${trophy.desc}</small>`;
-      tDiv.title = trophy.unlocked ? 'Sbloccato!' : 'Non ancora sbloccato';
-      trophyContainer.appendChild(tDiv);
-    });
-    
-    catDiv.appendChild(trophyContainer);
-    grid.appendChild(catDiv);
-  }
 }
-
-// =============================================================================
-// FUNZIONALITA PREDITTIVA (DISABILITATA)
-// La simulazione predittiva locale e stata disabilitata in quanto tutti
-// i calcoli del modello epidemiologico sono ora delegati all'API backend.
-// Per implementare questa funzionalita sarebbe necessario un endpoint
-// API dedicato che restituisca le proiezioni future.
-// =============================================================================
-function showPredictiveNext3(){
-  showToast('Previsioni disabilitate: utilizza l\'API per la simulazione');
-  return;
-}
-
-// =============================================================================
-// GESTORI DELLA MODALITA COMPETITIVA
-// Funzioni per le azioni speciali disponibili nella competizione contro l'AI.
-// =============================================================================
-function initCompetitiveHandlers(){
-  const show = ()=>{
-    const ids = ['#hr-competitive','#gb-competitive']; ids.forEach(id=>{ const el=$(id); if(el) el.style.display=''; });
-  };
-  ["#battleSabotage","#battleSteal","#battleReverse"].forEach(id=>{ const el=$(id); if(!el) return; el.addEventListener('click', ()=> performBattleAction(id)); });
-}
-
-// Esecuzione di un'azione competitiva contro l'avversario AI
-function performBattleAction(id){
-  const el = $(id); if(!el) return;
-  const cost = parseInt(el.dataset.cost,10) || 0;
-  if(state.game.coins < cost) return showToast('Monete insufficienti');
-  if(state.game.battleWarsUsedToday) return showToast('Azione già consumata oggi');
-  state.game.coins -= cost; state.game.battleWarsUsedToday = true;
-  switch(id){
-    case '#battleSabotage':
-      if(state.game.cpuOpponent) state.game.cpuOpponent.moveCount = Math.max(0,(state.game.cpuOpponent.moveCount||3)-1);
-      showToast('Sabotage eseguito: CPU avrà 1 mossa in meno');
-      break;
-    case '#battleSteal':
-      if(state.game.cpuOpponent){ 
-        const stolen = Math.min(30, state.game.cpuOpponent.coins); 
-        state.game.coins += stolen; 
-        state.game.cpuOpponent.coins = Math.max(0, state.game.cpuOpponent.coins - stolen);
-        showToast(`Ruba eseguito: +${stolen} 💰`);
-      }
-      break;
-    case '#battleReverse':
-      state.game.boostMgr.activate('reverseTrend', 1);
-      showToast('Trend invertito per 1 giorno');
-      break;
-  }
-  updateGameBaseUI();
-  updateCPUStats();
-}
-
-// =============================================================================
-// AGGIORNAMENTO DELLE STATISTICHE DELL'AVVERSARIO AI
-// Calcola e visualizza i contatori di performance per entrambi i giocatori.
-// =============================================================================
-function updateCPUStats(){
-  if(!state.game.cpuOpponent) return;
-  const counts = computeCounts();
-  const total = state.nodes.length || 1;
-  const playerFakePct = pct(counts.fake, total);
-  const playerTruthPct = pct(counts.truth, total);
-  
-  // Mostra stats 
-  const pfC = $("#playerFakeComp"); if(pfC) pfC.textContent = playerFakePct;
-  const ptC = $("#playerTruthComp"); if(ptC) ptC.textContent = playerTruthPct;
-  
-  // Statistiche dell'AI (stimate con variazione stocastica)
-  const cpuCounts = { fake: Math.floor(counts.fake * (0.8 + Math.random()*0.4)), truth: Math.floor(counts.truth * (1.2 + Math.random()*0.3)) };
-  const cpuFakePct = pct(cpuCounts.fake, total);
-  const cpuTruthPct = pct(cpuCounts.truth, total);
-  
-  const cfC = $("#cpuFakeComp"); if(cfC) cfC.textContent = cpuFakePct;
-  const ctC = $("#cpuTruthComp"); if(ctC) ctC.textContent = cpuTruthPct;
-}
-
-// =============================================================================
-// DECISIONE DELL'AVVERSARIO AI
-// Invocata al termine di ogni turno del giocatore nella modalita competitiva.
-// L'algoritmo valuta lo stato corrente e seleziona l'azione ottimale.
-// =============================================================================
-function makeAIMove(){
-  if(!state.game.cpuOpponent || selectedMode !== "Competitiva") return;
-  
-  const counts = computeCounts();
-  const total = state.nodes.length || 1;
-  const playerFakePct = pct(counts.fake, total);
-  const playerTruthPct = pct(counts.truth, total);
-  
-  // Calcolo della mossa ottimale dell'AI
-  const move = state.game.cpuOpponent.makeMove(playerFakePct, playerTruthPct, total);
-  
-  if(move){
-    switch(move.type){
-      case 'boost':
-        showToast(`CPU attiva ${move.name}`);
-        break;
-      case 'campaign':
-        showToast(`CPU lancia campagna su ${move.target}`);
-        break;
-    }
-  }
-  
-  updateCPUStats();
-}
-
-// Aggiornamento sincronizzato di tutti gli elementi dell'interfaccia di gioco
-function updateGameBaseUI(){
-  const coins = $("#coinsValue"); if(coins) coins.textContent = state.game.coins;
-  const moves = $("#movesLeft"); if(moves) moves.textContent = state.game.movesLeft;
-  renderBoostsActive();
-  updateButtonStates();
-}
-
-// =============================================================================
-// INIZIALIZZAZIONE AUTOMATICA AL CARICAMENTO DELLA PAGINA
-// Configura l'ambiente di simulazione appena il DOM e completamente caricato.
-// =============================================================================
-window.addEventListener('DOMContentLoaded', async () => {
-  console.log('Inizializzazione automatica del grafo...');
-  try {
-    // Caricamento del grafo e inizializzazione della comunicazione con l'API
-    await buildGraph(336, true);
-    // Rendering della visualizzazione basata sui dati di graph.json
-    renderGraph();
-    updateKPI();
-    console.log('Grafo inizializzato con successo');
-  } catch (error) {
-    console.error('Errore durante l\'inizializzazione automatica:', error);
-    showToast('Errore inizializzazione grafo. Ricarica la pagina.');
-  }
-});
